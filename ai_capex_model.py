@@ -14,7 +14,7 @@ GLOBALS = {
     "mem_factor": 100,  # memory reduction (x)
     "flop_factor": 10,  # FLOPs reduction (x)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
-    "opex_reduction": 10,  # opex/energy reduction (x)
+    "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.10,  # perpetuity capitalization rate
     "gpu_cost": 50000,  # fully-loaded $ per GPU
     "wall_power_kw": 1.8,  # wall power per GPU (incl PUE + node overhead)
@@ -194,6 +194,14 @@ def reduction_factor(g):
     return 1.0 / residual
 
 
+def energy_reduction(g):
+    """Operating-energy (opex) reduction. Energy splits between memory (HBM I/O + data
+    movement) and compute the SAME way cost does, so by default it equals the cost-weighted
+    reduction. Override by setting g['opex_reduction_override'] to a number (None = derive)."""
+    ov = g.get("opex_reduction_override")
+    return float(ov) if ov else reduction_factor(g)
+
+
 def compute_company(comp, g, year):
     """Return all derived numbers for one company in one year ('fy25' or 'fy26'). All $B."""
     total, infra, server, accel_share = comp[year]
@@ -209,7 +217,7 @@ def compute_company(comp, g, year):
     )
     # efficient version & value (dc_scale extends the cut to non-accelerator AI capex)
     capex_avoided = (accel + (ai_capex - accel) * g["dc_scale"]) * (1 - 1 / R)
-    opex_saved = ai_opex * (1 - 1 / g["opex_reduction"])
+    opex_saved = ai_opex * (1 - 1 / energy_reduction(g))
     spend_cut = capex_avoided + opex_saved
     capitalized = spend_cut / g["discount_rate"]
     # AI economics (cash basis)

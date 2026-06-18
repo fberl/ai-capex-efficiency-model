@@ -125,9 +125,9 @@ def build_inputs(inp):
         ),
         (
             "Opex / energy reduction factor",
-            G["opex_reduction"],
+            "=B20",
             "x",
-            "Energy ~ total FLOPs executed -> 10x floor.",
+            "DERIVED default = cost-weighted reduction (B20): energy splits memory/compute like cost. Overtype this cell to override.",
             INPUT_FILL,
         ),
         (
@@ -1044,6 +1044,14 @@ def build_methodology(meth):
         ),
         (
             "Value: spend cut/yr = accel x (1 - 1/reduction) ~95% + opex savings; capitalized = annual / discount rate. Compute valued at ACTUAL cost.",
+            False,
+        ),
+        (
+            "Energy/opex reduction: DERIVED = cost-weighted reduction (energy splits memory/compute like cost). Inputs B5 defaults to =B20; overtype that cell to override.",
+            False,
+        ),
+        (
+            "HOW EACH INPUT IS DERIVED: Inputs sheet column D notes every global assumption; Evidence sheet has the BOM cost split (mem share), accelerator-share teardowns, own-silicon TCO and filing top-lines; per-company capex/shares/revenue carry a basis + clickable Sources on each company tab.",
             False,
         ),
         (

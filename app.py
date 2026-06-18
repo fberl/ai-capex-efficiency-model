@@ -14,8 +14,8 @@ Deploy free:  push to GitHub -> share.streamlit.io  (needs requirements.txt)
 import streamlit as st
 import pandas as pd
 
-from ai_capex_model import (GLOBALS, COMPANIES, reduction_factor, compute_company,
-                            compute_year, global_estimate)
+from ai_capex_model import (GLOBALS, COMPANIES, reduction_factor, energy_reduction,
+                            compute_company, compute_year, global_estimate)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -84,7 +84,16 @@ def sidebar_globals():
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
     g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 1, 100, 1, "%.0f")
     g["mem_share"] = gnum("🟡 Memory share of GPU cost", "mem_share", 0.0, 1.0, 0.05, "%.2f")
-    g["opex_reduction"] = gnum("🟡 Opex / energy reduction (×)", "opex_reduction", 1, 100, 1, "%.0f")
+    auto_energy = s.checkbox("Auto-derive energy reduction (= cost reduction)", value=True,
+                             help="Operating energy splits between memory & compute like cost does, so the opex/energy "
+                                  "reduction defaults to the cost-weighted reduction. Uncheck to set it manually.")
+    if auto_energy:
+        g["opex_reduction_override"] = None
+    else:
+        st.session_state.setdefault("opex_override", round(reduction_factor(g), 1))
+        g["opex_reduction_override"] = s.number_input("🟡 Energy reduction override (×)", min_value=1.0,
+                                                      max_value=200.0, step=1.0, key="opex_override", format="%.1f")
+    s.caption(f"→ energy reduction = **{x1(energy_reduction(g))}** ({'derived' if auto_energy else 'manual override'})")
     s.subheader("Cost & energy")
     g["gpu_cost"] = gnum("🟡 Fully-loaded $/GPU", "gpu_cost", 5000, 150000, 1000, "%.0f")
     g["wall_power_kw"] = gnum("🟡 Wall power / GPU (kW)", "wall_power_kw", 0.3, 5.0, 0.1, "%.1f")
@@ -251,7 +260,7 @@ def totals_tab(comps, g):
         [("FY2025 capitalized ($B)", ""), (n0(o25 / disc), "b"), (n0(k25 / disc), "b"), (n0((o25 + k25) / disc), "s")],
         [("FY2026 annual ($B/yr)", ""), (n1(o26), "b"), (n1(k26), "b"), (n1(o26 + k26), "b")],
         [("FY2026 capitalized ($B)", ""), (n0(o26 / disc), "b"), (n0(k26 / disc), "b"), (n0((o26 + k26) / disc), "s")],
-        [("% reduction", ""), (pct(1 - 1 / g["opex_reduction"]), "y"), (pct(1 - 1 / reduction_factor(g)), "y"), ("", "")],
+        [("% reduction", ""), (pct(1 - 1 / energy_reduction(g)), "b"), (pct(1 - 1 / reduction_factor(g)), "b"), ("", "")],
     ])
     st.caption("OPEX = power saved each year (recoupable). CAPEX 'Overspend' = AI capex made unnecessary. "
                "Toggle the **Datacenter scaling factor** in the sidebar (0 = accelerator-only; ~0.7 ≈ breakeven; 1 = flips positive).")
@@ -264,7 +273,7 @@ def inputs_tab(g):
         ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "1e-2 memory = 100× less (RNN O(1) state vs transformer O(T) KV cache)"),
         ("FLOPs reduction factor", f"{g['flop_factor']:.0f}×", "y", "1e-1 FLOPs = 10× fewer"),
         ("Memory share of GPU cost", pct(g["mem_share"]), "y", "HBM + most CoWoS packaging → ~60/40 memory/compute (BOM)"),
-        ("Opex / energy reduction", f"{g['opex_reduction']:.0f}×", "y", "energy ~ total FLOPs executed → 10× floor"),
+        ("Opex / energy reduction", x1(energy_reduction(g)), "b" if g.get("opex_reduction_override") is None else "y", "DERIVED = cost-weighted reduction (energy splits memory/compute like cost); override in sidebar"),
         ("Discount rate", pct(g["discount_rate"]), "y", "perpetuity: value = annual benefit / rate"),
         ("Fully-loaded $/GPU", usd0(g["gpu_cost"]), "y", "GPU + share of server, NVLink, networking"),
         ("Wall power / GPU (kW)", f"{g['wall_power_kw']:.1f}", "y", "~1 kW TDP + node overhead × PUE 1.3"),
@@ -378,7 +387,32 @@ def evidence_tab(g):
 
 
 # ---- methodology tab -----------------------------------------------------------
-def methodology_tab():
+def methodology_tab(g):
+    section("Assumptions & how each value is derived")
+    ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
+    rows = [
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("Architecture claim — RNN O(1) state vs transformer O(T) KV cache → ~100× less", "")],
+        [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.0f}×", "y"), ("assumption", "y"), ("Architecture claim — ~10× fewer FLOPs per token", "")],
+        [("Memory share of GPU cost", ""), (pct(g["mem_share"]), "y"), ("assumption", "y"), ("BOM teardown: HBM ~41% + CoWoS ~23% (mostly memory) vs logic die ~9% → ~60/40 (Evidence tab)", "")],
+        [("Cost-weighted reduction (×)", ""), (x1(reduction_factor(g)), "b"), ("derived", "b"), ("= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor). Amdahl blend.", "")],
+        [("Energy / opex reduction (×)", ""), (x1(energy_reduction(g)), ek[1]), (ek[0], ek[1]), ("= cost-weighted reduction by default (energy splits memory/compute like cost); override in sidebar", "")],
+        [("Discount rate", ""), (pct(g["discount_rate"]), "y"), ("assumption", "y"), ("Perpetuity capitalization rate; set to your WACC (10% → ×10)", "")],
+        [("Fully-loaded $/GPU", ""), (usd0(g["gpu_cost"]), "y"), ("assumption", "y"), ("B200-class GPU (~$40k) + share of server, NVLink, networking", "")],
+        [("Wall power / GPU", ""), (f"{g['wall_power_kw']:.1f} kW", "y"), ("assumption", "y"), ("≈1 kW TDP × PUE ~1.3 + node overhead", "")],
+        [("Electricity rate", ""), (f"${g['elec_rate']:.2f}/kWh", "y"), ("assumption", "y"), ("Datacenter wholesale ~$0.06–0.10/kWh", "")],
+        [("Cooling / ops overhead", ""), (pct(g["cooling_overhead"]), "y"), ("assumption", "y"), ("Non-power running cost as a fraction of electricity", "")],
+        [("Fleet life", ""), (f"{g['fleet_life_yr']:.0f} yr", "y"), ("assumption", "y"), ("AI-GPU depreciation life; filings say 5–6 yr (we use 4, conservative)", "")],
+        [("Datacenter scaling factor", ""), (pct(g["dc_scale"]), "y"), ("toggle", "y"), ("Share of non-accelerator DC that also shrinks. 0 = conservative; ~0.7 ≈ breakeven; 1 = positive", "")],
+        [("Named share of global AI capex", ""), (pct(g["named_share_of_global"]), "y"), ("assumption", "y"), ("Named firms' share of worldwide AI capex; remainder grossed up pro-rata", "")],
+        [("SpaceX market cap", ""), (n0(g["spacex_mktcap"]), "g"), ("data", "g"), ("Market (IPO 2026-06-12 ~$1.77T)", "")],
+        [("Per-company total capex (FY25)", ""), ("disclosed", "g"), ("data", "g"), ("10-K / earnings calls — see each company tab + its Sources", "")],
+        [("Per-company FY26 capex", ""), ("estimate", "y"), ("assumption", "y"), ("Management guidance midpoint — see each company tab", "")],
+        [("Per-company infra / server / accel", ""), ("estimate", "y"), ("assumption", "y"), ("CFO commentary (infra/server) + BOM teardown (accel ~67–80%)", "")],
+        [("Per-company AI revenue", ""), ("mixed", "y"), ("assumption", "y"), ("Disclosed run-rates where available (MSFT $37B, AMZN $15B); else estimate", "")],
+    ]
+    show_table(["Value / driver", "Current", "Kind", "How it's derived / source"], rows,
+               widths={"Value / driver": "medium", "How it's derived / source": "large"})
+
     st.markdown(r"""
 ### Methodology & sources
 
@@ -440,4 +474,4 @@ with T[3 + nco]:
 with T[4 + nco]:
     evidence_tab(g)
 with T[5 + nco]:
-    methodology_tab()
+    methodology_tab(g)
