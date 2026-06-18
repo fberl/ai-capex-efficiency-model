@@ -54,6 +54,7 @@ def n0(v): return f"{v:,.0f}"
 def pct(v): return f"{v:.0%}"
 def usd0(v): return f"${v:,.0f}"
 def x1(v): return f"{v:.1f}×"
+def md_usd(v): return f"\\${v:,.0f}"  # $-escaped for st.markdown/st.caption (Streamlit reads $…$ as LaTeX)
 
 
 def fleet_breakdown(accel_b, g):
@@ -229,12 +230,12 @@ def totals_tab(comps, g):
     c3.metric("Net AI w/ our arch (FY25)", f"{usd0(tot25['net_arch'])}B/yr", delta=f"{usd0(tot25['spend_cut'])}B cut")
     c4.metric("% of AI spend cut", pct(tot25["pct_cut"]))
     verdict = ("AI flips **profitable** at these settings." if tot25["net_arch"] > 0
-               else f"FY25 AI burn shrinks from **{usd0(-tot25['net_now'])}B** to **{usd0(-tot25['net_arch'])}B**/yr "
-                    f"(spend cut **{usd0(tot25['spend_cut'])}B**, ~{usd0(tot25['capitalized'])}B capitalized).")
+               else f"FY25 AI burn shrinks from **{md_usd(-tot25['net_now'])}B** to **{md_usd(-tot25['net_arch'])}B**/yr "
+                    f"(spend cut **{md_usd(tot25['spend_cut'])}B**, ~{md_usd(tot25['capitalized'])}B capitalized).")
     st.markdown(f"**{verdict}**")
     st.caption(f"The {len(comps)} named firms are a floor. GLOBAL estimate (named ≈ {g['named_share_of_global']:.0%} of "
-               f"world AI capex): FY25 spend cut ~{usd0(glob25['spend_cut'])}B → ~${glob25['capitalized'] / 1000:.1f}T "
-               f"capitalized; FY26 ~${glob26['capitalized'] / 1000:.1f}T. The rest is other clouds, China, neoclouds, xAI & sovereign AI.")
+               f"world AI capex): FY25 spend cut ~{md_usd(glob25['spend_cut'])}B → ~\\${glob25['capitalized'] / 1000:.1f}T "
+               f"capitalized; FY26 ~\\${glob26['capitalized'] / 1000:.1f}T. The rest is other clouds, China, neoclouds, xAI & sovereign AI.")
 
     section("Net AI economics — FY2025 (cash basis)")
     econ_show(rows25, tot25, glob25)
@@ -378,7 +379,7 @@ def evidence_tab(g):
 
 # ---- methodology tab -----------------------------------------------------------
 def methodology_tab():
-    st.markdown("""
+    st.markdown(r"""
 ### Methodology & sources
 
 **Engine.** A GPU is ~60% memory / ~40% compute by cost. Cutting memory ×100 and FLOPs ×10 leaves a
@@ -398,10 +399,10 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results (defaults).** Cost-weighted reduction ~22×. FY25: ~$370B AI capex vs ~$79B AI revenue →
-~−$295B/yr burn; spend cut ~$159B → burn ~−$136B (~$1.6T capitalized). Global est ~$2.0T (FY25), ~$4.1T (FY26).
+**Key results (defaults).** Cost-weighted reduction ~22×. FY25: ~\$370B AI capex vs ~\$79B AI revenue →
+~−\$295B/yr burn; spend cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized). Global est ~\$2.0T (FY25), ~\$4.1T (FY26).
 
-**Caveats.** AI revenue is the softest input (Microsoft $37B & Amazon $15B run-rates disclosed; the rest
+**Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
 estimated; Meta's real payoff is indirect ad-uplift). Totals are disclosed; server/accelerator splits are
 estimated (±15–20%). Capitalization is a simple perpetuity (benefit ÷ discount rate). Analytical estimate,
 not investment advice.
@@ -414,7 +415,7 @@ Per-company source links are on each company tab.
 
 # ---- main ----------------------------------------------------------------------
 st.title("AI Capex Efficiency")
-st.caption("Interactive mirror of the workbook — the $ value of cutting AI memory ~100× and FLOPs ~10× "
+st.caption("Interactive mirror of the workbook — the \\$ value of cutting AI memory ~100× and FLOPs ~10× "
            "(~22× cost-weighted) across the 6 largest AI-capex spenders + a global estimate. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
