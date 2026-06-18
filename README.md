@@ -14,13 +14,16 @@ SpaceX) plus a grossed-up **global estimate**.
 ## Live app
 
 Deploy free on [Streamlit Community Cloud](https://share.streamlit.io) — see **Deploy** below.
-Every assumption is a slider, hidden behind its cell until you click it.
+The app is a **tab-for-tab mirror of the workbook**: one tab per worksheet (Totals, each company,
+Inputs, Sensitivity, Cost Ladder, Evidence, Methodology), each rendered as the same colored grid.
+Edit the 🟡/🟢 cells (globals in the sidebar; per-company in the ✏️ panel on each company tab) and
+every grid recomputes live.
 
 ## Contents
 
 | File | What it is |
 |---|---|
-| `app.py` | Streamlit app — interactive, slider-driven |
+| `app.py` | Streamlit app — interactive tab-for-tab mirror of the workbook |
 | `ai_capex_model.py` | **Single source of truth** — all defaults + math (app and Excel both import it, so they can't drift) |
 | `ai_capex_efficiency.py` | Generates `AI_Capex_Efficiency.xlsx` (live-formula workbook) |
 | `AI_Capex_Efficiency.xlsx` | The model as an auditable spreadsheet — every output is a live formula |
@@ -51,7 +54,7 @@ pip install -r requirements.txt && streamlit run app.py
 
 ## Color / assumption convention (mirrored in the spreadsheet)
 
-- 🟡 **assumption** — a lever we chose; every one is a slider in the app
+- 🟡 **assumption** — a lever we chose; editable in the app (sidebar / per-company ✏️ panel)
 - 🟢 **disclosed data** — from filings or markets (FY25 capex, market caps)
 - 🔵 **derived** — a formula
 
