@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Excel lock files (keep the workbook itself tracked)
+~$*.xlsx
+
+# Streamlit secrets (never publish)
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
