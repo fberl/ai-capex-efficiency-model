@@ -80,6 +80,25 @@ def sidebar_globals():
         return s.number_input(label, min_value=float(lo), max_value=float(hi),
                               step=float(step), key=key, format=fmt, help=help)
 
+    s.subheader("Scenario")
+    scenarios = {
+        "Measured (H100 2026-07-21: compute ×4)": 4.0,
+        "Ceiling (kernels mature: compute ×10)": 10.0,
+        "Memory-only (compute parity ×1)": 1.0,
+    }
+    if "scenario" not in st.session_state:
+        st.session_state["scenario"] = next(iter(scenarios))
+        st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
+
+    def _apply_scenario():
+        st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
+
+    s.radio("Scenario (sets the FLOPs lever)", list(scenarios), key="scenario",
+            on_change=_apply_scenario)
+    s.caption("Measured = 4× long-context prefill on one H100 (2026-07-21, parameter-matched, "
+              "bf16, 1M tokens); serving-memory advantage measured 43–315× at 1M tokens, so the "
+              "÷100 memory lever sits inside the measured band. Editing the numbers below "
+              "overrides the preset.")
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
     g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 1, 100, 1, "%.0f")
@@ -271,7 +290,7 @@ def inputs_tab(g):
     section("Global inputs (edit in the sidebar ◀)")
     items = [
         ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "1e-2 memory = 100× less (RNN O(1) state vs transformer O(T) KV cache)"),
-        ("FLOPs reduction factor", f"{g['flop_factor']:.0f}×", "y", "1e-1 FLOPs = 10× fewer"),
+        ("FLOPs reduction factor", f"{g['flop_factor']:.0f}×", "y", "measured ×4 long-context prefill (H100, 2026-07-21); ceiling ×10 as kernels mature"),
         ("Memory share of GPU cost", pct(g["mem_share"]), "y", "HBM + most CoWoS packaging → ~60/40 memory/compute (BOM)"),
         ("Opex / energy reduction", x1(energy_reduction(g)), "b" if g.get("opex_reduction_override") is None else "y", "DERIVED = cost-weighted reduction (energy splits memory/compute like cost); override in sidebar"),
         ("Discount rate", pct(g["discount_rate"]), "y", "perpetuity: value = annual benefit / rate"),
@@ -391,8 +410,8 @@ def methodology_tab(g):
     section("Assumptions & how each value is derived")
     ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
     rows = [
-        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("Architecture claim — RNN O(1) state vs transformer O(T) KV cache → ~100× less", "")],
-        [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.0f}×", "y"), ("assumption", "y"), ("Architecture claim — ~10× fewer FLOPs per token", "")],
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache — measured 43–315× at 1M tokens (width-dependent); ÷100 sits inside the band", "")],
+        [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.0f}×", "y"), ("assumption", "y"), ("Measured: ×4 long-context prefill on one H100 (2026-07-21, parameter-matched, bf16); ceiling ~×10 as kernels mature", "")],
         [("Memory share of GPU cost", ""), (pct(g["mem_share"]), "y"), ("assumption", "y"), ("BOM teardown: HBM ~41% + CoWoS ~23% (mostly memory) vs logic die ~9% → ~60/40 (Evidence tab)", "")],
         [("Cost-weighted reduction (×)", ""), (x1(reduction_factor(g)), "b"), ("derived", "b"), ("= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor). Amdahl blend.", "")],
         [("Energy / opex reduction (×)", ""), (x1(energy_reduction(g)), ek[1]), (ek[0], ek[1]), ("= cost-weighted reduction by default (energy splits memory/compute like cost); override in sidebar", "")],
@@ -420,6 +439,11 @@ def methodology_tab(g):
 residual of ~0.6% + 4% → **~22× cost-weighted reduction** (Amdahl — floored by the least-reduced
 component, compute). 1000× (=100×·10×) is *not* physical: cost is additive, not multiplicative.
 
+**Measured tier (default).** The 2026-07-21 single-H100 measurement (parameter-matched, bf16) grounds
+both levers: serving memory measured **43–315× smaller at 1M tokens** (width-dependent — the ÷100
+lever sits inside the band) and long-context prefill measured **4× faster** at 1M → flop factor 4 →
+**~9.4× cost-weighted**. The ~22× tier is the ceiling as kernels mature (compute ÷10).
+
 **Per company.** `total capex (disclosed) × infra share × server share × accelerator share`
 → accelerator capex → fleet → energy/opex → efficient version → value (FY2025 actual + FY2026 estimate).
 Infra share strips non-AI (Amazon = AWS ~68%); server share is CFO-disclosed; accelerator-within-server
@@ -433,8 +457,9 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results (defaults).** Cost-weighted reduction ~22×. FY25: ~\$370B AI capex vs ~\$79B AI revenue →
-~−\$295B/yr burn; spend cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized). Global est ~\$2.0T (FY25), ~\$4.1T (FY26).
+**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. Measured tier (~9.4×):
+spend cut ~\$149B → burn ~−\$146B (~\$1.5T capitalized; global est ~\$1.9T FY25, ~\$3.9T FY26). Ceiling
+(~22×): cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized; global ~\$2.0T FY25, ~\$4.1T FY26).
 
 **Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
 estimated; Meta's real payoff is indirect ad-uplift). Totals are disclosed; server/accelerator splits are
@@ -449,8 +474,10 @@ Per-company source links are on each company tab.
 
 # ---- main ----------------------------------------------------------------------
 st.title("AI Capex Efficiency")
-st.caption("Interactive mirror of the workbook — the \\$ value of cutting AI memory ~100× and FLOPs ~10× "
-           "(~22× cost-weighted) across the 6 largest AI-capex spenders + a global estimate. "
+st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage: "
+           "memory ÷100 (measured 43–315× at 1M tokens) + compute ×4 measured on H100 "
+           "(~9.4× cost-weighted), with a ~22× ceiling as kernels mature (compute ÷10) — "
+           "across the 6 largest AI-capex spenders + a global estimate. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
 g = sidebar_globals()
