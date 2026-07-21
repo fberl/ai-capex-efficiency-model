@@ -1,12 +1,16 @@
 # AI Capex Efficiency
 
 Dollarizes the value of a more efficient AI architecture — cutting model **memory ≈100×**
-and **FLOPs ≈10×** — for the companies spending the most on AI infrastructure.
+and **FLOPs ≈4× measured / ≈10× at the ceiling** — for the companies spending the most on
+AI infrastructure.
 
 The headline isn't 100× or 1000×. A GPU is **~60% memory / ~40% compute by cost**, so the
-realistic, cost-weighted saving is **~22×** (Amdahl's law — you're floored by the
-least-reduced component, compute). That ~22× is then applied bottom-up to each company's
-disclosed capex to size the **avoided spend** and its **capitalized value**.
+cost-weighted saving is Amdahl-floored by the least-reduced component (compute). The
+default **measured** scenario uses a 2026-07-21 single-H100 measurement (parameter-matched,
+bf16): serving memory **43–315× smaller at 1M tokens** (the ÷100 lever sits inside the
+band) and long-context prefill **4× faster** → **~9.4× cost-weighted**. The **ceiling**
+scenario (compute ÷10 as kernels mature) is **~22×**. Each is applied bottom-up to each
+company's disclosed capex to size the **avoided spend** and its **capitalized value**.
 
 Coverage: the 6 largest AI-capex spenders (Microsoft, Alphabet, Amazon, Meta, Oracle,
 SpaceX) plus a grossed-up **global estimate**.
@@ -46,7 +50,7 @@ pip install -r requirements.txt && streamlit run app.py
 
 ## How it works
 
-- **Engine:** cost-weighted reduction `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 22×.
+- **Engine:** cost-weighted reduction `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` — ≈9.4× measured (flop ×4), ≈22× ceiling (flop ×10).
 - **Per company:** `total capex (disclosed) × infra share × server share × accelerator share`
   → accelerator capex → fleet → energy/opex → avoided spend → capitalized value. FY2025 actual + FY2026 estimate.
 - **Net AI economics (cash basis):** `AI revenue − AI capex − AI opex`; with the architecture, add the spend cut.
