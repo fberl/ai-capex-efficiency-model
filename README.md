@@ -7,8 +7,9 @@ AI infrastructure.
 The headline isn't 100× or 1000×. A GPU is **~60% memory / ~40% compute by cost**, so the
 cost-weighted saving is Amdahl-floored by the least-reduced component (compute). The
 default **measured** scenario uses a 2026-07-21 single-H100 measurement (parameter-matched,
-bf16): serving memory **43–315× smaller at 1M tokens** (the ÷100 lever sits inside the
-band) and long-context prefill **4× faster** → **~9.4× cost-weighted**. The **ceiling**
+bf16): long-context prefill **4× faster**, and serving-state math on those measured configs
+gives memory **43–315× smaller at 1M tokens** (the ÷100 lever sits inside the band) →
+**~9.4× cost-weighted**. The **ceiling**
 scenario (compute ÷10 as kernels mature) is **~22×**. Each is applied bottom-up to each
 company's disclosed capex to size the **avoided spend** and its **capitalized value**.
 

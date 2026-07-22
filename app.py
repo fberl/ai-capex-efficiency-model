@@ -96,7 +96,8 @@ def sidebar_globals():
     s.radio("Scenario (sets the FLOPs lever)", list(scenarios), key="scenario",
             on_change=_apply_scenario)
     s.caption("Measured = 4× long-context prefill on one H100 (2026-07-21, parameter-matched, "
-              "bf16, 1M tokens); serving-memory advantage measured 43–315× at 1M tokens, so the "
+              "bf16, 1M tokens); serving-state math on those measured configs gives a 43–315× "
+              "memory advantage at 1M tokens, so the "
               "÷100 memory lever sits inside the measured band. Editing the numbers below "
               "overrides the preset.")
     s.subheader("Architecture")
@@ -410,7 +411,7 @@ def methodology_tab(g):
     section("Assumptions & how each value is derived")
     ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
     rows = [
-        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache — measured 43–315× at 1M tokens (width-dependent); ÷100 sits inside the band", "")],
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache — serving-state math on the measured configs: 43–315× at 1M tokens (width-dependent); ÷100 sits inside the band", "")],
         [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.0f}×", "y"), ("assumption", "y"), ("Measured: ×4 long-context prefill on one H100 (2026-07-21, parameter-matched, bf16); ceiling ~×10 as kernels mature", "")],
         [("Memory share of GPU cost", ""), (pct(g["mem_share"]), "y"), ("assumption", "y"), ("BOM teardown: HBM ~41% + CoWoS ~23% (mostly memory) vs logic die ~9% → ~60/40 (Evidence tab)", "")],
         [("Cost-weighted reduction (×)", ""), (x1(reduction_factor(g)), "b"), ("derived", "b"), ("= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor). Amdahl blend.", "")],
@@ -440,8 +441,9 @@ residual of ~0.6% + 4% → **~22× cost-weighted reduction** (Amdahl — floored
 component, compute). 1000× (=100×·10×) is *not* physical: cost is additive, not multiplicative.
 
 **Measured tier (default).** The 2026-07-21 single-H100 measurement (parameter-matched, bf16) grounds
-both levers: serving memory measured **43–315× smaller at 1M tokens** (width-dependent — the ÷100
-lever sits inside the band) and long-context prefill measured **4× faster** at 1M → flop factor 4 →
+both levers: serving-state math on the measured configs gives **43–315× smaller serving memory at
+1M tokens** (width-dependent — the ÷100 lever sits inside the band; analytic retained state,
+workspace excluded) and long-context prefill measured **4× faster** at 1M → flop factor 4 →
 **~9.4× cost-weighted**. The ~22× tier is the ceiling as kernels mature (compute ÷10).
 
 **Per company.** `total capex (disclosed) × infra share × server share × accelerator share`
@@ -458,7 +460,7 @@ spend cut. All six firms lose money on AI today. The *Datacenter scaling factor*
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
 **Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. Measured tier (~9.4×):
-spend cut ~\$149B → burn ~−\$146B (~\$1.5T capitalized; global est ~\$1.9T FY25, ~\$3.9T FY26). Ceiling
+spend cut ~\$149B → burn ~−\$146B (~\$1.5T capitalized; global est ~\$1.9T FY25, ~\$3.8T FY26). Ceiling
 (~22×): cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized; global ~\$2.0T FY25, ~\$4.1T FY26).
 
 **Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
@@ -475,7 +477,7 @@ Per-company source links are on each company tab.
 # ---- main ----------------------------------------------------------------------
 st.title("AI Capex Efficiency")
 st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage: "
-           "memory ÷100 (measured 43–315× at 1M tokens) + compute ×4 measured on H100 "
+           "memory ÷100 (serving-state math: 43–315× at 1M tokens) + compute ×4 measured on H100 "
            "(~9.4× cost-weighted), with a ~22× ceiling as kernels mature (compute ÷10) — "
            "across the 6 largest AI-capex spenders + a global estimate. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
