@@ -345,11 +345,15 @@ TRAINING_SCALING_20260814 = {
 #     BW / (kv_bytes_per_token * T) -- i.e. INVERSELY LINEAR IN CONTEXT.
 #   * Ours is context-flat because the state is context-flat.
 #
-# Two independent measured cells pin that law, and the transformer is at its
-# ceiling in both (the next stream OOMs):
+# Two independent measured cells pin that law:
 #
 #     ctx  32,768 :   8 streams -> 511.84 tok/s/GPU   (16 streams OOM)
 #     ctx 262,144 :   1 stream  ->  63.98 tok/s/GPU   ( 2 streams OOM)
+#
+# At 262k the transformer is at its CEILING exactly -- 1 runs, 2 OOM, the integers
+# are adjacent. At 32k it is not: 8 ran and 16 OOMed, 9..15 were never run, so the
+# ceiling there is only bracketed (8 <= c < 16). See "ratio_32k_bounded" below --
+# the 32k cell is a RANGE, near parity, and nothing here leans on it.
 #
 # 511.84 * 32768/262144 = 63.980 vs the measured 63.976 -- the 1/T law reproduces
 # the far cell to 0.006%, so interpolating it to 64k is arithmetic, not a guess.
@@ -367,8 +371,32 @@ DECODE_THROUGHPUT_20260814 = {
     "battn_cell_32k": 585.4143612476083,  # 64 streams @ 32,768 ctx
     "battn_flat_note": "context-flat (-4.0% from 32k to 262k); the lower 262k cell is used everywhere",
     # measured aggregate ratios -- the two cells the derived curve must reproduce
-    "measured_ratio_262k": 562.0835756046827 / 63.976137240450086,  # = 8.786
-    "measured_ratio_32k": 585.4143612476083 / 511.84161509663613,  # = 1.144
+    "measured_ratio_262k": 562.0835756046827 / 63.976137240450086,  # = 8.786, ceiling EXACT
+    "measured_ratio_32k": 585.4143612476083 / 511.84161509663613,  # = 1.144 AT 8 STREAMS
+    # ---- the 32k cell is BOUNDED, not a point (adversarial audit, 2026-08-14:
+    # bdm/docs/deck_scaling/decode_rebase_adversarial_audit_20260814.md, finding D5).
+    # The receipts prove 8 <= ceiling < 16 at 32k; decode-only arithmetic admits ~15
+    # streams and the measuring harness's own prefill activations ~11. The other end
+    # of the cell is physics: a 32k decode step re-reads 6.44 GB of KV per stream, so
+    # at the measured 3.87 TB/s KV streaming rate NO stream count lets the transformer
+    # pass ~601 tok/s at that context. Both ends are therefore known and the truth is
+    # between them: 0.97-1.14, i.e. NEAR PARITY at 32k. Only the upper end was measured.
+    "tf_kv_streaming_bytes_per_s": 3.87e12,  # top of the audit's measured 3.84-3.87 TB/s window
+    "tf_32k_aggregate_bandwidth_cap_tokens_per_s": 3.87e12 / (196608.0 * 32768.0),  # = 600.7
+    "ratio_32k_bounded": (
+        585.4143612476083 / (3.87e12 / (196608.0 * 32768.0)),  # = 0.975 -> 0.97
+        585.4143612476083 / 511.84161509663613,  # = 1.144, the measured 8-stream end
+    ),
+    "ratio_32k_label": "0.97-1.14 bounded (near parity): the transformer's 511.8 tok/s was measured at 8 "
+    "streams, which the receipts place at 8 <= ceiling < 16 (analytic ~11-15); at its true depth its 32k "
+    "aggregate is bandwidth-capped near 601 tok/s against our 585.4. Only the 1.14 end was measured. The "
+    "262k cell (x8.79) is UNAFFECTED -- there the ceiling is exactly 1 stream, with 2 OOM",
+    "anchor_note": "the 1/T law is anchored on the MEASURED 8-stream 32k cell. If the transformer's true "
+    "32k depth is 11-15 streams its aggregate there rises toward the ~601 tok/s bandwidth cap, so this "
+    "anchor can be low by up to ~17% NEAR 32k -- a direction that flatters us. The law is pinned "
+    "out-of-sample at 262k, where the ceiling IS exactly one stream and the prediction lands within "
+    "0.006%, and every scenario context (64k, 262k) sits at or beyond that pin. Do not quote the ~32k "
+    "end of this curve; quote the range",
     "conservatism": "BOTH sides of these cells run against us. The transformer is at 95.6% GPU-busy at its "
     "ceiling cell (it has no headroom left), while bAttention's 64-stream cell is only 9.5% GPU-busy and "
     "1.62 GB of state on a 96 GB card -- a grid cap, not a ceiling. Its decode also ran the unoptimised "
@@ -386,10 +414,12 @@ def decode_throughput_ratio(ctx_tokens, kv_compression=1.0, d=None):
 
     This is the decode COST ratio -- if a GPU serves X tok/s one way and Y the
     other, the cost per token goes as 1/X vs 1/Y -- and it is memory-ceiling
-    driven, not latency driven. It reproduces the two measured cells (x1.10 at
-    32k against the x1.14 measured, x8.79 at 262k against the x8.79 measured) and
-    crosses 1 at ~29,800 tokens: BELOW ~30k context the transformer serves more
-    tokens per GPU-second than we do, and the model says so.
+    driven, not latency driven. It reproduces both cells: x8.79 at 262k against
+    the x8.79 measured there (an EXACT ceiling: 1 stream runs, 2 OOM), and x1.10
+    at 32k, inside that cell's bounded 0.97-1.14 range (see 'ratio_32k_label' --
+    the 1.14 end is the transformer measured at 8 of an 8-15 ceiling). It crosses
+    1 at ~29,800 tokens: BELOW ~30k context the transformer serves more tokens
+    per GPU-second than we do, and the model says so.
 
     kv_compression grants the transformer a mature KV stack (paged attention +
     quantization). It divides our lever by the same factor -- see
@@ -753,7 +783,8 @@ if __name__ == "__main__":
         f"-> x0.86, the TRANSFORMER is ahead"
     )
     print(
-        f"  per-GPU aggregate at the memory ceiling (transformer OOMs at the next stream in both cells):"
+        f"  per-GPU aggregate at the memory ceiling (exact at 262k: 1 stream, 2 OOM; at 32k the "
+        f"receipts bracket it, 8 ran and 16 OOMed):"
     )
     for ctx in (4096, 32768, 65536, 262144, 1048576):
         tf = _d["tf_anchor_tokens_per_s_per_gpu"] * (_d["tf_anchor_ctx"] / ctx)
@@ -762,7 +793,10 @@ if __name__ == "__main__":
             f"{_d['battn_tokens_per_s_per_gpu']:>7,.1f} (flat)  ->  x{decode_throughput_ratio(ctx):>7.2f}"
         )
     print(
-        f"    measured cells: x{_d['measured_ratio_32k']:.2f} at 32k, x{_d['measured_ratio_262k']:.2f} at 262k; "
+        f"    cells: x{_d['measured_ratio_262k']:.2f} at 262k (MEASURED, ceiling exact) and "
+        f"x{_d['ratio_32k_bounded'][0]:.2f}-{_d['ratio_32k_bounded'][1]:.2f} at 32k (BOUNDED, near parity: "
+        f"the transformer measured at 8 of an 8-15 ceiling, bandwidth-capped at "
+        f"{_d['tf_32k_aggregate_bandwidth_cap_tokens_per_s']:.0f} tok/s); "
         f"the lever crosses 1 at ~{SERVING_BLEND_20260814['crossover_ctx']:,} tokens"
     )
     print("== serving state, MEASURED, FULL MODEL (transformer KV grows per token; ours does not) ==")
