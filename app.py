@@ -15,7 +15,14 @@ import streamlit as st
 import pandas as pd
 
 from ai_capex_model import (GLOBALS, COMPANIES, reduction_factor, energy_reduction,
-                            compute_company, compute_year, global_estimate)
+                            compute_company, compute_year, global_estimate,
+                            SCENARIOS, DEFAULT_SCENARIO, DEPLOYMENT_SCALES,
+                            DEFAULT_DEPLOYMENT_SCALE, KERNEL_OPERATING_POINTS,
+                            DEFAULT_KERNEL_POINT, QUALITY_FIT_20260814,
+                            PARAM_MATCHING_PCT_20260814, SERVING_STATE_20260814,
+                            STEP_GAP_20260814, TRAINING_SCALING_20260814,
+                            SERVING_BLEND_20260808, param_matching_fraction,
+                            param_matching_gain, serving_state_ratio, compute_lever)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -81,28 +88,75 @@ def sidebar_globals():
                               step=float(step), key=key, format=fmt, help=help)
 
     s.subheader("Scenario")
-    scenarios = {
-        "Measured (H100 2026-07-21: compute ×4)": 4.0,
-        "Ceiling (kernels mature: compute ×10)": 10.0,
-        "Memory-only (compute parity ×1)": 1.0,
-    }
+    scale_labels = {lab: n for n, lab in DEPLOYMENT_SCALES}
+
+    def _scenario_flop():
+        """FLOPs lever implied by the current scenario + scale + kernel point."""
+        name = st.session_state.get("scenario", DEFAULT_SCENARIO)
+        spec = SCENARIOS[name]
+        if not spec["dynamic"]:
+            return spec["flop_factor"]
+        n_tf = scale_labels[st.session_state.get("scale_label", _default_scale_label)]
+        kf = KERNEL_OPERATING_POINTS[st.session_state.get("kernel_point", DEFAULT_KERNEL_POINT)]
+        return compute_lever(n_tf, kf)
+
+    _default_scale_label = next(lab for n, lab in DEPLOYMENT_SCALES
+                                if n == DEFAULT_DEPLOYMENT_SCALE)
     if "scenario" not in st.session_state:
-        st.session_state["scenario"] = next(iter(scenarios))
-        st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
+        st.session_state["scenario"] = DEFAULT_SCENARIO
+        st.session_state["scale_label"] = _default_scale_label
+        st.session_state["kernel_point"] = DEFAULT_KERNEL_POINT
+        st.session_state["flop_factor"] = _scenario_flop()
 
     def _apply_scenario():
-        st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
+        st.session_state["flop_factor"] = _scenario_flop()
 
-    s.radio("Scenario (sets the FLOPs lever)", list(scenarios), key="scenario",
+    s.radio("Scenario (sets the FLOPs lever)", list(SCENARIOS), key="scenario",
             on_change=_apply_scenario)
-    s.caption("Measured = 4× long-context prefill on one H100 (2026-07-21, parameter-matched, "
-              "bf16, 1M tokens); serving-state math on those measured configs gives a 43–315× "
-              "memory advantage at 1M tokens, so the "
-              "÷100 memory lever sits inside the measured band. Editing the numbers below "
-              "overrides the preset.")
+    dynamic = SCENARIOS[st.session_state["scenario"]]["dynamic"]
+    if dynamic:
+        s.select_slider("🟡 Deployment scale (transformer params)", options=list(scale_labels),
+                        key="scale_label", on_change=_apply_scenario,
+                        help="The parameter-matching curve is a projection of two OLS fits over "
+                             "4 measured rungs each (47M–663M params). Everything past ~1B is "
+                             "extrapolation.")
+        s.selectbox("🟡 Kernel operating point (measured)", list(KERNEL_OPERATING_POINTS),
+                    key="kernel_point", on_change=_apply_scenario,
+                    help="The measured transformer-cost / bAttention-cost ratio at equal size. "
+                         "Above 1 we are ahead; below 1 we are behind.")
+        _n = scale_labels[st.session_state["scale_label"]]
+        _frac = param_matching_fraction(_n)
+        _kf = KERNEL_OPERATING_POINTS[st.session_state["kernel_point"]]
+        s.caption(
+            f"**FIT-DERIVED** — equal fitted quality at **{_frac:.1%}** of the transformer's "
+            f"parameters → ×{param_matching_gain(_n):.2f} compute per token at equal quality "
+            f"(ln(bpb) = a + b·ln N, 4 rungs per family, fits cross at 392M).  \n"
+            f"**MEASURED** — ×{_kf:.2f} cost ratio at the selected operating point.  \n"
+            f"→ FLOPs lever = ×{param_matching_gain(_n):.2f} × ×{_kf:.2f} = "
+            f"**×{param_matching_gain(_n) * _kf:.2f}**. Editing the numbers below overrides it."
+        )
+    else:
+        s.caption(SCENARIOS[st.session_state["scenario"]]["blurb"] +
+                  " Editing the numbers below overrides the preset.")
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
-    g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 1, 100, 1, "%.0f")
+    ctx_labels = {f"{v:,}": v for v in (4096, 16384, 65536, 262144, 1048576)}
+    st.session_state.setdefault("serve_ctx", "65,536")
+    _ctx = ctx_labels[s.select_slider("Serving context for the memory read-out (tokens)",
+                                      options=list(ctx_labels), key="serve_ctx")]
+    s.caption(
+        f"**MEASURED** ({SERVING_STATE_20260814['config']}) — the transformer carries "
+        f"{SERVING_STATE_20260814['tf_kv_mb_per_token_per_stream']:.5f} MB of KV per token of "
+        f"context per stream; our decode state is a constant "
+        f"{SERVING_STATE_20260814['battn_state_mb_per_stream']:.2f} MB. At {_ctx:,} tokens that is "
+        f"×{serving_state_ratio(_ctx):,.0f} less serving state "
+        f"(×{serving_state_ratio(_ctx, kv_compression=8.0):,.0f} even granting the transformer "
+        f"paged attention + KV ÷8). The ÷{g['mem_factor']:.0f} lever above is left far below the "
+        f"measured ratio on purpose — past ~100× the memory term stops moving the Amdahl blend."
+    )
+    g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 0.1, 200, 0.5, "%.2f",
+                            help="Below 1 means compute is WORSE, which is the honest reading at "
+                                 "short context — see the 'Single-GPU training step' operating point.")
     g["mem_share"] = gnum("🟡 Memory share of GPU cost", "mem_share", 0.0, 1.0, 0.05, "%.2f")
     auto_energy = s.checkbox("Auto-derive energy reduction (= cost reduction)", value=True,
                              help="Operating energy splits between memory & compute like cost does, so the opex/energy "
@@ -290,8 +344,8 @@ def totals_tab(comps, g):
 def inputs_tab(g):
     section("Global inputs (edit in the sidebar ◀)")
     items = [
-        ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "1e-2 memory = 100× less (RNN O(1) state vs transformer O(T) KV cache)"),
-        ("FLOPs reduction factor", f"{g['flop_factor']:.0f}×", "y", "measured ×4 long-context prefill (H100, 2026-07-21); ceiling ×10 as kernels mature"),
+        ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "MEASURED serving-state ratio is far larger (see Evidence); the lever is capped low on purpose — past ~100× it stops moving the blend"),
+        ("FLOPs reduction factor", f"{g['flop_factor']:.2f}×", "y", "2026-08-14 scenario = FIT-DERIVED parameter-matching gain × MEASURED kernel cost ratio; earlier presets ×4 measured / ×10 ceiling"),
         ("Memory share of GPU cost", pct(g["mem_share"]), "y", "HBM + most CoWoS packaging → ~60/40 memory/compute (BOM)"),
         ("Opex / energy reduction", x1(energy_reduction(g)), "b" if g.get("opex_reduction_override") is None else "y", "DERIVED = cost-weighted reduction (energy splits memory/compute like cost); override in sidebar"),
         ("Discount rate", pct(g["discount_rate"]), "y", "perpetuity: value = annual benefit / rate"),
@@ -398,6 +452,64 @@ def evidence_tab(g):
         [("SpaceX (S-1 AI capex)", ""), ("$12.7B", "g"), ("—", ""), ("~all accelerator (greenfield COLOSSUS)", "")],
     ], widths={"Note": "large"})
 
+    section("2026-08-14 sealed scaling refit — the parameter-matching curve (FIT-DERIVED)")
+    tp = QUALITY_FIT_20260814["top_pair"]
+    show_table(["Transformer scale", "bAttention params for equal fitted quality", "As % of transformer", "Compute per token at equal quality"],
+               [[(lab, ""), (f"{param_matching_fraction(n) * n:,.0f}", "b"),
+                 (f"{param_matching_fraction(n):.1%}", "b"), (x1(param_matching_gain(n)), "b")]
+                for n, lab in DEPLOYMENT_SCALES],
+               widths={"Transformer scale": "medium", "bAttention params for equal fitted quality": "medium"})
+    st.caption(
+        f"ln(bpb) = a + b·ln(params), OLS per family — bAttention a={QUALITY_FIT_20260814['battn']['a']:.4f} "
+        f"b={QUALITY_FIT_20260814['battn']['b']:.4f} over {QUALITY_FIT_20260814['battn']['rungs']} rungs; "
+        f"transformer a={QUALITY_FIT_20260814['tf']['a']:.4f} b={QUALITY_FIT_20260814['tf']['b']:.4f} over "
+        f"{QUALITY_FIT_20260814['tf']['rungs']} rungs. The fits cross at "
+        f"{QUALITY_FIT_20260814['crossover_params'] / 1e6:.0f}M params (95% CI "
+        f"{QUALITY_FIT_20260814['crossover_ci95'][0] / 1e6:.0f}M–{QUALITY_FIT_20260814['crossover_ci95'][1] / 1e6:.0f}M). "
+        "**This is a projection of two fits, not a measurement** — the rungs span 47M–663M params, so every row "
+        "past 1B is extrapolation. The measured top pair: bAttention reaches "
+        f"{tp['battn_bpb']:.4f} bpb on {tp['battn_params']:,} params against the transformer's {tp['tf_bpb']:.4f} bpb "
+        f"on {tp['tf_params']:,} — {abs(tp['param_pct']):.1f}% fewer parameters, {tp['bpb_pct']:.2f}% behind on quality. "
+        f"Receipt: `{QUALITY_FIT_20260814['receipt']}`."
+    )
+
+    section("2026-08-14 serving state (MEASURED) — theirs grows per token, ours does not")
+    ss = SERVING_STATE_20260814
+    show_table(["Context (tokens)", "Transformer KV / stream", "bAttention state / stream", "Ratio", "Granting the transformer KV ÷8"],
+               [[(f"{c:,}", ""), (f"{ss['tf_kv_mb_per_token_per_stream'] * c / 1024:,.1f} GB", "b"),
+                 (f"{ss['battn_state_mb_per_stream']:.2f} MB", "b"),
+                 (f"×{serving_state_ratio(c):,.0f}", "b"),
+                 (f"×{serving_state_ratio(c, kv_compression=8.0):,.0f}", "b")]
+                for c in (4096, 16384, 65536, 262144, 1048576)])
+    st.caption(
+        f"{ss['config']}. {ss['tf_kv_mb_per_token_per_stream']:.5f} MB of KV per token of context per stream, "
+        f"measured linear at 4k/32k/262k; {ss['tf_measured_point']}. Our decode carry is constant in context "
+        f"({ss['battn_state_scope']}). Receipt: `{ss['receipt']}`. The model's memory lever stays at "
+        f"÷{g['mem_factor']:.0f} — orders of magnitude below the measured ratio — because the Amdahl blend stops "
+        "responding to the memory term long before that."
+    )
+
+    section("The counterweight (MEASURED) — where the compute cost runs AGAINST us")
+    sg, tr = STEP_GAP_20260814, TRAINING_SCALING_20260814
+    show_table(["Measurement", "bAttention", "Transformer", "Reading"], [
+        [("Training step, one GPU, 2,048-token context", ""), (f"{sg['battn_ms_per_step']:,.0f} ms/step", "b"),
+         (f"{sg['tf_ms_per_step']:,.0f} ms/step", "b"), (f"×{sg['gap_against_battn']:.2f} AGAINST us", "b")],
+        [("Training scaling to 8 GPUs (own 1-GPU baseline)", ""), (f"×{tr['battn_x8_best_load']:.2f}", "b"),
+         (f"×{tr['tf_x8_best_load']:.2f}", "b"), ("in our favour", "b")],
+        [("Serving blend at 64k context, 10:1 input:output", ""), ("—", ""), ("—", ""),
+         (f"×{SERVING_BLEND_20260808['blend']:.2f} in our favour", "b")],
+    ], widths={"Measurement": "large"})
+    st.caption(
+        f"The step gap is real and is carried here on purpose: {sg['config']}. {sg['note']}. "
+        f"At equal quality it partly cancels — a trillion-parameter-scale deployment needs "
+        f"{param_matching_fraction(1e12):.1%} of the parameters, so the same step costs "
+        f"×{sg['gap_against_battn'] * param_matching_fraction(1e12):.2f} rather than ×{sg['gap_against_battn']:.2f}. "
+        f"The serving blend decomposes as prefill ×{SERVING_BLEND_20260808['prefill_ratio']:.2f} and decode "
+        f"×{SERVING_BLEND_20260808['decode_ratio']:.2f}, with decode "
+        f"{SERVING_BLEND_20260808['tf_decode_share_of_cost']:.0%} of transformer serving cost. "
+        f"{SERVING_BLEND_20260808['caveat']}. Receipts: `{sg['receipt']}`, `{tr['receipt']}`."
+    )
+
     section("Cost-weighted reduction vs memory share (live)")
     show_table(["Scenario", "Memory share", "Reduction"],
                [[(f"memory share = {int(w * 100)}%", ""), (pct(w), "y"),
@@ -411,8 +523,9 @@ def methodology_tab(g):
     section("Assumptions & how each value is derived")
     ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
     rows = [
-        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache — serving-state math on the measured configs: 43–315× at 1M tokens (width-dependent); ÷100 sits inside the band", "")],
-        [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.0f}×", "y"), ("assumption", "y"), ("Measured: ×4 long-context prefill on one H100 (2026-07-21, parameter-matched, bf16); ceiling ~×10 as kernels mature", "")],
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache. MEASURED 2026-08-14 (d1536/L26 fp16): 0.15234 MB of KV per token of context per stream against a constant 0.15 MB decode carry — ×65,536 at 64k context. ÷100 is a deliberate cap, not the measurement", "")],
+        [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.2f}×", "y"), ("assumption", "y"), ("2026-08-14 scenario = FIT-DERIVED parameter-matching gain (equal fitted quality at 23.7% of the parameters at 1T scale → ×4.22) × MEASURED kernel cost ratio at the chosen operating point. Earlier presets: ×4 measured prefill (2026-07-21), ×10 ceiling", "")],
+        [("Compute cost that runs AGAINST us", ""), (f"×{STEP_GAP_20260814['gap_against_battn']:.2f}", "y"), ("measured", "b"), ("At 2,048-token context on one GPU a training step costs ×6.46 MORE (8,979 vs 1,389 ms/step, d1536/27L, fp16, 601-step protocol). Selectable as a kernel operating point in the sidebar; at equal quality it falls to ×1.53", "")],
         [("Memory share of GPU cost", ""), (pct(g["mem_share"]), "y"), ("assumption", "y"), ("BOM teardown: HBM ~41% + CoWoS ~23% (mostly memory) vs logic die ~9% → ~60/40 (Evidence tab)", "")],
         [("Cost-weighted reduction (×)", ""), (x1(reduction_factor(g)), "b"), ("derived", "b"), ("= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor). Amdahl blend.", "")],
         [("Energy / opex reduction (×)", ""), (x1(energy_reduction(g)), ek[1]), (ek[0], ek[1]), ("= cost-weighted reduction by default (energy splits memory/compute like cost); override in sidebar", "")],
@@ -440,11 +553,31 @@ def methodology_tab(g):
 residual of ~0.6% + 4% → **~22× cost-weighted reduction** (Amdahl — floored by the least-reduced
 component, compute). 1000× (=100×·10×) is *not* physical: cost is additive, not multiplicative.
 
-**Measured tier (default).** The 2026-07-21 single-H100 measurement (parameter-matched, bf16) grounds
-both levers: serving-state math on the measured configs gives **43–315× smaller serving memory at
-1M tokens** (width-dependent — the ÷100 lever sits inside the band; analytic retained state,
-workspace excluded) and long-context prefill measured **4× faster** at 1M → flop factor 4 →
-**~9.4× cost-weighted**. The ~22× tier is the ceiling as kernels mature (compute ÷10).
+**Quality-matched tier (default, 2026-08-14).** The sealed scaling refit adds a *quality* axis the
+earlier tiers did not have. Both families now have four measured ladder rungs (47M–663M params) fitted
+as `ln(bpb) = a + b·ln(params)`; the fits cross at **392M params**, and above the crossing bAttention
+reaches the same fitted quality on fewer parameters — **84.2% at 1B, 55.2% at 10B, 36.2% at 100B,
+23.7% at 1T, 15.5% at 10T**. Per-token cost is ~linear in parameters, so 23.7% of the parameters is a
+**×4.22 compute-per-token advantage at equal quality** at trillion-parameter scale. That factor is
+**FIT-DERIVED — a projection of two fits, not a measurement**, and every point past ~1B extrapolates
+beyond the measured rungs. It multiplies the **MEASURED** cost ratio at the chosen kernel operating
+point (default: the ×11.93 serving blend at 64k context, 10:1 input:output) to give the FLOPs lever.
+
+**The measurement that runs against us.** At 2,048-token context on a single GPU a bAttention training
+step costs **×6.46 more** than the transformer's (8,979 vs 1,389 ms/step, d1536/27 layers, fp16,
+601-step protocol). It is selectable as a kernel operating point in the sidebar, where it drives the
+FLOPs lever below 1. At equal quality it shrinks to ×1.53 but does not vanish. The serving claim above
+excludes training for exactly this reason.
+
+**Memory (2026-08-14, MEASURED).** At d1536/26 layers in fp16 the transformer carries **0.15234 MB of
+KV per token of context per stream**; our decode carry is a constant **0.15 MB**. That is ×65,536 less
+serving state at 64k context and ×1,048,576 at 1M — or ×8,192 and ×131,072 granting the transformer
+paged attention and KV ÷8. The model's memory lever stays at **÷100** regardless: past ~100× the memory
+term is 0.6% of residual cost and stops moving the Amdahl blend, so raising it would change the
+headline multiple without changing the money.
+
+**Earlier tiers, kept for comparison.** ×4 measured long-context prefill (2026-07-21, parameter-matched,
+bf16, 1M tokens) → ~9.4× cost-weighted; ×10 ceiling → ~22×; compute parity ×1 → ~2.5×.
 
 **Per company.** `total capex (disclosed) × infra share × server share × accelerator share`
 → accelerator capex → fleet → energy/opex → efficient version → value (FY2025 actual + FY2026 estimate).
@@ -459,9 +592,17 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. Measured tier (~9.4×):
-spend cut ~\$149B → burn ~−\$146B (~\$1.5T capitalized; global est ~\$1.9T FY25, ~\$3.8T FY26). Ceiling
-(~22×): cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized; global ~\$2.0T FY25, ~\$4.1T FY26).
+**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. Quality-matched tier at
+1T scale (~71.7×): spend cut ~\$165B → burn ~−\$131B (~\$1.6T capitalized; global est ~\$2.1T FY25,
+~\$4.2T FY26). 2026-07-21 measured tier (~9.4×): cut ~\$149B → burn ~−\$146B (~\$1.5T; global ~\$1.9T /
+~\$3.8T). Ceiling (~22×): cut ~\$159B → burn ~−\$136B (~\$1.6T; global ~\$2.0T / ~\$4.1T).
+
+**Why the money barely moves.** The cut is `accelerator capex × (1 − 1/reduction)`, which saturates. Every
+plausible wiring of the 2026-08-14 levers — the parameter-matching gain alone (×4.22 → 9.9× cost-weighted),
+the serving blend alone (×11.93 → 25.3×), or the two composed (×50.33 → 71.7×) — lands the FY25 cut between
+~\$150B and ~\$165B. Past a compute lever of ~10× the headline is set by the deliberately conservative ÷100
+memory cap, not by the compute receipts. Doubling the multiple is worth a few \$B; that is the honest shape
+of the result and the reason the model refuses multiplicative headlines.
 
 **Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
 estimated; Meta's real payoff is indirect ad-uplift). Totals are disclosed; server/accelerator splits are
@@ -476,10 +617,11 @@ Per-company source links are on each company tab.
 
 # ---- main ----------------------------------------------------------------------
 st.title("AI Capex Efficiency")
-st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage: "
-           "memory ÷100 (serving-state math: 43–315× at 1M tokens) + compute ×4 measured on H100 "
-           "(~9.4× cost-weighted), with a ~22× ceiling as kernels mature (compute ÷10) — "
-           "across the 6 largest AI-capex spenders + a global estimate. "
+st.caption("Interactive mirror of the workbook — the \\$ value of the architecture advantage across the "
+           "6 largest AI-capex spenders + a global estimate. Default scenario (**2026-08-14 sealed refit**): "
+           "memory ÷100 (a deliberate cap — the measured serving-state ratio is ×65,536 at 64k context) and a "
+           "FLOPs lever built as **FIT-DERIVED** equal-quality parameter matching × **MEASURED** kernel cost "
+           "ratio. Earlier scenarios are kept in the sidebar. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
 g = sidebar_globals()
