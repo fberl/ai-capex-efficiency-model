@@ -473,10 +473,10 @@ def serving_blend(ctx_tokens=65536, in_out_ratio=10.0, kv_compression=1.0):
 # is re-derived above and is what moved.
 SERVING_BLEND_20260814 = {
     "status": "MEASURED (decode) x MEASURED (prefill, 2026-08-07/08 lane)",
-    "blend": 2.191475,
-    "prefill_ratio": 1.173191,  # UNCHANGED lane (published 1.173206; same table, tighter arithmetic)
-    "decode_ratio": 2.196318,  # = decode_throughput_ratio(65536); was 15.911024
-    "tf_decode_share_of_cost": 0.997465,  # was 0.973364
+    "blend": 2.1914745310042303,
+    "prefill_ratio": 1.1731902814472388,  # UNCHANGED lane (published 1.173206; same table, tighter arithmetic)
+    "decode_ratio": 2.196318388447414,  # = decode_throughput_ratio(65536); was 15.911024
+    "tf_decode_share_of_cost": 0.9974654937498,  # was 0.973364
     "operating_point": "10:1 input:output, 64k average context, training excluded",
     "supersedes": {
         "blend": 11.929698, "decode_ratio": 15.911024, "tf_decode_share_of_cost": 0.973364,
@@ -489,7 +489,7 @@ SERVING_BLEND_20260814 = {
     "in ~4.9 ms against our ~5.7 ms -- it is FASTER per token. The lever is that it cannot hold many "
     "64k streams on a card and we can. Below ~30k context the blend falls under 1 and we are behind",
     "sensitivity_kv8": {
-        "blend": 0.278794, "decode_ratio": 0.274540,
+        "blend": 0.27879433403451537, "decode_ratio": 0.2745397985559268,
         "note": "granting the transformer an idealized mature stack (paged attention + KV quantization, "
         "KV /8) divides the decode lever by 8 and puts the TRANSFORMER ahead at 64k. The measured cells "
         "grant it no such thing, and neither family's decode is optimised in this receipt -- ours ran the "
@@ -505,7 +505,7 @@ SERVING_BLEND_20260814 = {
 # ahead, below 1 we are behind.
 KERNEL_OPERATING_POINTS = {
     "Serving blend, 64k context (measured 2026-08-14)": SERVING_BLEND_20260814["blend"],
-    "Serving blend, 262k context (measured 2026-08-14)": 8.737893,
+    "Serving blend, 262k context (measured 2026-08-14)": 8.737893443830517,
     "Long-context prefill, 1M tokens (measured 2026-07-21)": 4.016653993568674,
     "Kernels at parity (x1)": 1.0,
     "Serving blend, 64k, granting the transformer KV /8": SERVING_BLEND_20260814["sensitivity_kv8"]["blend"],
@@ -724,8 +724,8 @@ def _selfcheck():
     b = SERVING_BLEND_20260814
     got = serving_blend()
     for k in ("blend", "prefill_ratio", "decode_ratio", "tf_decode_share_of_cost"):
-        assert abs(got[k] - b[k]) < 1e-5, f"published {k} {b[k]} != derived {got[k]}"
-    assert abs(serving_blend(kv_compression=8.0)["blend"] - b["sensitivity_kv8"]["blend"]) < 1e-5
+        assert abs(got[k] - b[k]) < 1e-12, f"published {k} {b[k]} != derived {got[k]}"
+    assert abs(serving_blend(kv_compression=8.0)["blend"] - b["sensitivity_kv8"]["blend"]) < 1e-12
     return worst
 
 
