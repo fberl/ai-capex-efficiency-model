@@ -21,8 +21,9 @@ from ai_capex_model import (GLOBALS, COMPANIES, reduction_factor, energy_reducti
                             DEFAULT_KERNEL_POINT, QUALITY_FIT_20260814,
                             PARAM_MATCHING_PCT_20260814, SERVING_STATE_20260814,
                             STEP_GAP_20260814, TRAINING_SCALING_20260814,
-                            SERVING_BLEND_20260808, param_matching_fraction,
-                            param_matching_gain, serving_state_ratio, compute_lever)
+                            SERVING_BLEND_20260814, DECODE_THROUGHPUT_20260814,
+                            param_matching_fraction, param_matching_gain,
+                            serving_state_ratio, decode_throughput_ratio, compute_lever)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -145,10 +146,12 @@ def sidebar_globals():
     _ctx = ctx_labels[s.select_slider("Serving context for the memory read-out (tokens)",
                                       options=list(ctx_labels), key="serve_ctx")]
     s.caption(
-        f"**MEASURED** ({SERVING_STATE_20260814['config']}) — the transformer carries "
-        f"{SERVING_STATE_20260814['tf_kv_mb_per_token_per_stream']:.5f} MB of KV per token of "
+        f"**MEASURED, full model** ({SERVING_STATE_20260814['config']}) — the transformer carries "
+        f"{SERVING_STATE_20260814['tf_kv_mb_per_token_per_stream'] * 1000:.0f} KB of KV per token of "
         f"context per stream; our decode state is a constant "
-        f"{SERVING_STATE_20260814['battn_state_mb_per_stream']:.2f} MB. At {_ctx:,} tokens that is "
+        f"{SERVING_STATE_20260814['battn_state_mb_per_stream']:.1f} MB (h **and** M memory — the "
+        f"{SERVING_STATE_20260814['battn_state_mb_per_stream_h_carry_proxy']:.2f} MB this model used to "
+        f"quote was an h-carry-only proxy). At {_ctx:,} tokens that is "
         f"×{serving_state_ratio(_ctx):,.0f} less serving state "
         f"(×{serving_state_ratio(_ctx, kv_compression=8.0):,.0f} even granting the transformer "
         f"paged attention + KV ÷8). The ÷{g['mem_factor']:.0f} lever above is left far below the "
@@ -473,20 +476,42 @@ def evidence_tab(g):
         f"Receipt: `{QUALITY_FIT_20260814['receipt']}`."
     )
 
-    section("2026-08-14 serving state (MEASURED) — theirs grows per token, ours does not")
+    section("2026-08-14 serving state (MEASURED, full model) — theirs grows per token, ours does not")
     ss = SERVING_STATE_20260814
     show_table(["Context (tokens)", "Transformer KV / stream", "bAttention state / stream", "Ratio", "Granting the transformer KV ÷8"],
-               [[(f"{c:,}", ""), (f"{ss['tf_kv_mb_per_token_per_stream'] * c / 1024:,.1f} GB", "b"),
-                 (f"{ss['battn_state_mb_per_stream']:.2f} MB", "b"),
+               [[(f"{c:,}", ""), (f"{ss['tf_kv_mb_per_token_per_stream'] * c / 1000:,.1f} GB", "b"),
+                 (f"{ss['battn_state_mb_per_stream']:.1f} MB", "b"),
                  (f"×{serving_state_ratio(c):,.0f}", "b"),
                  (f"×{serving_state_ratio(c, kv_compression=8.0):,.0f}", "b")]
                 for c in (4096, 16384, 65536, 262144, 1048576)])
     st.caption(
-        f"{ss['config']}. {ss['tf_kv_mb_per_token_per_stream']:.5f} MB of KV per token of context per stream, "
-        f"measured linear at 4k/32k/262k; {ss['tf_measured_point']}. Our decode carry is constant in context "
-        f"({ss['battn_state_scope']}). Receipt: `{ss['receipt']}`. The model's memory lever stays at "
+        f"{ss['config']}. {ss['tf_kv_mb_per_token_per_stream'] * 1000:.0f} KB of KV per token of context per stream, "
+        f"linear in context; {ss['tf_measured_point']}. Ours is constant in context and is the FULL recurrent "
+        f"state — {ss['battn_state_scope']} — so {ss['battn_measured_point']}. "
+        f"Receipt: `{ss['receipt']}`. The model's memory lever stays at "
         f"÷{g['mem_factor']:.0f} — orders of magnitude below the measured ratio — because the Amdahl blend stops "
         "responding to the memory term long before that."
+    )
+
+    section("2026-08-14 decode (MEASURED) — a memory-ceiling lever, not a latency lever")
+    dt = DECODE_THROUGHPUT_20260814
+    show_table(["Context (tokens)", "Transformer (tokens/s per GPU)", "bAttention (tokens/s per GPU)", "Decode lever"],
+               [[(f"{c:,}" + ("  ← measured cell" if c in (32768, 262144) else ""), ""),
+                 (f"{dt['tf_anchor_tokens_per_s_per_gpu'] * dt['tf_anchor_ctx'] / c:,.1f}", "b"),
+                 (f"{dt['battn_tokens_per_s_per_gpu']:,.1f}", "b"),
+                 (f"×{decode_throughput_ratio(c):,.2f}", "b")]
+                for c in (4096, 16384, 32768, 65536, 262144, 1048576)])
+    st.caption(
+        "**Read this one carefully — it is the number that moved.** Per generated token at a single stream the "
+        "transformer is FASTER than us at 64k context (~4.9 ms of GPU-busy against our ~5.7 ms), and the old "
+        "×15.9 decode lever rested on an inflated transformer per-token cost that is now retired. What the "
+        "transformer cannot do is hold many long-context streams on one card: it re-reads its whole KV cache "
+        "every token, so once the card is full its tokens per second falls as 1/context. Ours is context-flat. "
+        f"Two measured cells pin it — at 32,768 tokens the transformer manages 8 streams and OOMs at 16 "
+        f"(×{dt['measured_ratio_32k']:.2f}); at 262,144 it manages 1 and OOMs at 2 (×{dt['measured_ratio_262k']:.2f}). "
+        "The 1/context law anchored on the first reproduces the second to 0.006%, so the rows between them are "
+        f"arithmetic. The lever crosses 1 at ~{SERVING_BLEND_20260814['crossover_ctx']:,} tokens: **below that the "
+        f"transformer serves more tokens per GPU-second than we do.** {dt['conservatism']} Receipt: `{dt['receipt']}`."
     )
 
     section("The counterweight (MEASURED) — where the compute cost runs AGAINST us")
@@ -496,18 +521,25 @@ def evidence_tab(g):
          (f"{sg['tf_ms_per_step']:,.0f} ms/step", "b"), (f"×{sg['gap_against_battn']:.2f} AGAINST us", "b")],
         [("Training scaling to 8 GPUs (own 1-GPU baseline)", ""), (f"×{tr['battn_x8_best_load']:.2f}", "b"),
          (f"×{tr['tf_x8_best_load']:.2f}", "b"), ("in our favour", "b")],
+        [("Decode, per token, ONE stream at 64k context", ""), ("~5.74 ms", "b"), ("~4.92 ms", "b"),
+         ("×0.86 AGAINST us", "b")],
         [("Serving blend at 64k context, 10:1 input:output", ""), ("—", ""), ("—", ""),
-         (f"×{SERVING_BLEND_20260808['blend']:.2f} in our favour", "b")],
+         (f"×{SERVING_BLEND_20260814['blend']:.2f} in our favour", "b")],
     ], widths={"Measurement": "large"})
     st.caption(
         f"The step gap is real and is carried here on purpose: {sg['config']}. {sg['note']}. "
         f"At equal quality it partly cancels — a trillion-parameter-scale deployment needs "
         f"{param_matching_fraction(1e12):.1%} of the parameters, so the same step costs "
         f"×{sg['gap_against_battn'] * param_matching_fraction(1e12):.2f} rather than ×{sg['gap_against_battn']:.2f}. "
-        f"The serving blend decomposes as prefill ×{SERVING_BLEND_20260808['prefill_ratio']:.2f} and decode "
-        f"×{SERVING_BLEND_20260808['decode_ratio']:.2f}, with decode "
-        f"{SERVING_BLEND_20260808['tf_decode_share_of_cost']:.0%} of transformer serving cost. "
-        f"{SERVING_BLEND_20260808['caveat']}. Receipts: `{sg['receipt']}`, `{tr['receipt']}`."
+        f"The serving blend decomposes as prefill ×{SERVING_BLEND_20260814['prefill_ratio']:.2f} and decode "
+        f"×{SERVING_BLEND_20260814['decode_ratio']:.2f}, with decode "
+        f"{SERVING_BLEND_20260814['tf_decode_share_of_cost']:.1%} of transformer serving cost. "
+        f"**{SERVING_BLEND_20260814['caveat']}.** It supersedes a ×"
+        f"{SERVING_BLEND_20260814['supersedes']['blend']:.2f} blend: "
+        f"{SERVING_BLEND_20260814['supersedes']['why']}. Downside row — "
+        f"{SERVING_BLEND_20260814['sensitivity_kv8']['note'][0].lower()}"
+        f"{SERVING_BLEND_20260814['sensitivity_kv8']['note'][1:]} "
+        f"Receipts: `{sg['receipt']}`, `{tr['receipt']}`."
     )
 
     section("Cost-weighted reduction vs memory share (live)")
@@ -523,7 +555,7 @@ def methodology_tab(g):
     section("Assumptions & how each value is derived")
     ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
     rows = [
-        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache. MEASURED 2026-08-14 (d1536/L26 fp16): 0.15234 MB of KV per token of context per stream against a constant 0.15 MB decode carry — ×65,536 at 64k context. ÷100 is a deliberate cap, not the measurement", "")],
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("RNN O(1) state vs transformer O(T) KV cache. MEASURED 2026-08-14 (d2048/L24 bf16, GH200, full model): 197 KB of KV per token of context per stream against a constant 25.4 MB state carry — ×508 at 64k context, ×2,032 at 262k. ÷100 is a deliberate cap, not the measurement", "")],
         [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.2f}×", "y"), ("assumption", "y"), ("2026-08-14 scenario = FIT-DERIVED parameter-matching gain (equal fitted quality at 23.7% of the parameters at 1T scale → ×4.22) × MEASURED kernel cost ratio at the chosen operating point. Earlier presets: ×4 measured prefill (2026-07-21), ×10 ceiling", "")],
         [("Compute cost that runs AGAINST us", ""), (f"×{STEP_GAP_20260814['gap_against_battn']:.2f}", "y"), ("measured", "b"), ("At 2,048-token context on one GPU a training step costs ×6.46 MORE (8,979 vs 1,389 ms/step, d1536/27L, fp16, 601-step protocol). Selectable as a kernel operating point in the sidebar; at equal quality it falls to ×1.53", "")],
         [("Memory share of GPU cost", ""), (pct(g["mem_share"]), "y"), ("assumption", "y"), ("BOM teardown: HBM ~41% + CoWoS ~23% (mostly memory) vs logic die ~9% → ~60/40 (Evidence tab)", "")],
@@ -561,7 +593,23 @@ reaches the same fitted quality on fewer parameters — **84.2% at 1B, 55.2% at 
 **×4.22 compute-per-token advantage at equal quality** at trillion-parameter scale. That factor is
 **FIT-DERIVED — a projection of two fits, not a measurement**, and every point past ~1B extrapolates
 beyond the measured rungs. It multiplies the **MEASURED** cost ratio at the chosen kernel operating
-point (default: the ×11.93 serving blend at 64k context, 10:1 input:output) to give the FLOPs lever.
+point (default: the ×2.19 serving blend at 64k context, 10:1 input:output) to give the FLOPs lever.
+
+**The decode lever was re-based on 2026-08-14, and it fell.** A full-model bf16 decode measurement on a
+GH200 (d2048/24 layers, both families, same session) retired two numbers this model used to carry: a
+transformer decode cost of 87.9 ms/token that a growing-KV re-planning artifact in the old harness had
+inflated, and a bAttention serving-state figure of 0.15 MB/stream that was an h-carry-only proxy with no
+M memory in it. The honest per-token picture is that at 64k context on a single stream the **transformer
+decodes a token faster than we do** (~4.9 ms of GPU-busy against our ~5.7 ms). What survives — and what
+the decode lever now means — is a **memory ceiling**: the transformer re-reads its entire KV cache for
+every token it emits, so once a card is full of KV its aggregate throughput falls as 1/context, while
+ours is flat. Measured on one GPU: at 262,144 tokens the transformer fits **one** stream (a second OOMs)
+and serves 64 tokens/s, while bAttention holds **64** streams in 1.6 GB and serves 562 tokens/s — an
+**×8.8 aggregate advantage**. At 32,768 tokens the same comparison is ×1.1, and the lever crosses 1 near
+**30,000 tokens**: below that context the transformer serves more tokens per GPU-second than we do. The
+64k figure (×2.20) is interpolated on that 1/context law, which reproduces the far measured cell to
+0.006%. The old ×15.9 decode lever, the "×53 decode" line and the "512 concurrent streams" figure are
+all retired.
 
 **The measurement that runs against us.** At 2,048-token context on a single GPU a bAttention training
 step costs **×6.46 more** than the transformer's (8,979 vs 1,389 ms/step, d1536/27 layers, fp16,
@@ -569,12 +617,13 @@ step costs **×6.46 more** than the transformer's (8,979 vs 1,389 ms/step, d1536
 FLOPs lever below 1. At equal quality it shrinks to ×1.53 but does not vanish. The serving claim above
 excludes training for exactly this reason.
 
-**Memory (2026-08-14, MEASURED).** At d1536/26 layers in fp16 the transformer carries **0.15234 MB of
-KV per token of context per stream**; our decode carry is a constant **0.15 MB**. That is ×65,536 less
-serving state at 64k context and ×1,048,576 at 1M — or ×8,192 and ×131,072 granting the transformer
-paged attention and KV ÷8. The model's memory lever stays at **÷100** regardless: past ~100× the memory
-term is 0.6% of residual cost and stops moving the Amdahl blend, so raising it would change the
-headline multiple without changing the money.
+**Memory (2026-08-14, MEASURED, full model).** At d2048/24 layers in bf16 the transformer carries **197 KB
+of KV per token of context per stream** (51.5 GB for one 262,144-token stream); our state carry is a
+constant **25.4 MB/stream** — the *whole* recurrent cell, h and M memory, not the 0.15 MB h-carry proxy
+this model used to quote. That is ×508 less serving state at 64k context, ×2,032 at 262k and ×8,128 at
+1M — or ×64, ×254 and ×1,016 granting the transformer paged attention and KV ÷8. The model's memory
+lever stays at **÷100** regardless: past ~100× the memory term is 0.6% of residual cost and stops moving
+the Amdahl blend, so raising it would change the headline multiple without changing the money.
 
 **Earlier tiers, kept for comparison.** ×4 measured long-context prefill (2026-07-21, parameter-matched,
 bf16, 1M tokens) → ~9.4× cost-weighted; ×10 ceiling → ~22×; compute parity ×1 → ~2.5×.
@@ -593,16 +642,20 @@ spend cut. All six firms lose money on AI today. The *Datacenter scaling factor*
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
 **Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. Quality-matched tier at
-1T scale (~71.7×): spend cut ~\$165B → burn ~−\$131B (~\$1.6T capitalized; global est ~\$2.1T FY25,
-~\$4.2T FY26). 2026-07-21 measured tier (~9.4×): cut ~\$149B → burn ~−\$146B (~\$1.5T; global ~\$1.9T /
+1T scale (~20.3×): spend cut ~\$159B → burn ~−\$136B (~\$1.6T capitalized; global est ~\$2.0T FY25,
+~\$4.1T FY26). 2026-07-21 measured tier (~9.4×): cut ~\$149B → burn ~−\$146B (~\$1.5T; global ~\$1.9T /
 ~\$3.8T). Ceiling (~22×): cut ~\$159B → burn ~−\$136B (~\$1.6T; global ~\$2.0T / ~\$4.1T).
 
-**Why the money barely moves.** The cut is `accelerator capex × (1 − 1/reduction)`, which saturates. Every
-plausible wiring of the 2026-08-14 levers — the parameter-matching gain alone (×4.22 → 9.9× cost-weighted),
-the serving blend alone (×11.93 → 25.3×), or the two composed (×50.33 → 71.7×) — lands the FY25 cut between
-~\$150B and ~\$165B. Past a compute lever of ~10× the headline is set by the deliberately conservative ÷100
-memory cap, not by the compute receipts. Doubling the multiple is worth a few \$B; that is the honest shape
-of the result and the reason the model refuses multiplicative headlines.
+**Why the money barely moves — and the 2026-08-14 re-base proves it.** The cut is
+`accelerator capex × (1 − 1/reduction)`, which saturates. Re-basing the decode lever on the new receipts
+cut the compute lever **×50.33 → ×9.24, a factor of 5.4**, and the FY25 headline moved **\$165B → \$159B,
+−3.6%**. Every plausible wiring of the levers — the parameter-matching gain alone (×4.22 → 9.9×
+cost-weighted), the serving blend alone (×2.19 → 5.3×), or the two composed (×9.24 → 20.3×) — lands the
+FY25 cut between ~\$135B and ~\$159B. Even the harshest downside row, granting the transformer an
+idealized KV÷8 stack so the blend falls to ×0.28 and the whole compute lever to ×1.18, only takes the cut
+to ~\$109B. Past a compute lever of ~10× the headline is set by the deliberately conservative ÷100 memory
+cap, not by the compute receipts. Doubling the multiple is worth a few \$B; that is the honest shape of
+the result and the reason the model refuses multiplicative headlines.
 
 **Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
 estimated; Meta's real payoff is indirect ad-uplift). Totals are disclosed; server/accelerator splits are
@@ -619,9 +672,11 @@ Per-company source links are on each company tab.
 st.title("AI Capex Efficiency")
 st.caption("Interactive mirror of the workbook — the \\$ value of the architecture advantage across the "
            "6 largest AI-capex spenders + a global estimate. Default scenario (**2026-08-14 sealed refit**): "
-           "memory ÷100 (a deliberate cap — the measured serving-state ratio is ×65,536 at 64k context) and a "
-           "FLOPs lever built as **FIT-DERIVED** equal-quality parameter matching × **MEASURED** kernel cost "
-           "ratio. Earlier scenarios are kept in the sidebar. "
+           "memory ÷100 (a deliberate cap — the measured full-model serving-state ratio is ×508 at 64k "
+           "context) and a FLOPs lever built as **FIT-DERIVED** equal-quality parameter matching × "
+           "**MEASURED** serving-throughput ratio. The measured factor is memory-ceiling driven — how many "
+           "concurrent streams a GPU holds — not a per-token latency win. Earlier scenarios are kept in the "
+           "sidebar. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
 g = sidebar_globals()

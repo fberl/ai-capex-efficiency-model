@@ -11,6 +11,16 @@ floored by the less-reduced component (compute).
 Scenario history (each one keeps working; the app defaults to the latest):
   2026-07-21  single-H100 parameter-matched prefill      -> flop x4
   2026-08-14  sealed quality refit + serving receipts    -> see SCENARIOS below
+
+2026-08-14 DECODE RE-BASE. A full-model bf16 decode measurement (one GH200, both
+families, same session) retired the transformer's 87.9 ms/token decode cost (a
+growing-KV re-planning harness artifact) and the 0.15 MB bAttention serving state
+(an h-carry-only proxy with no M memory). The decode lever is no longer a
+per-token LATENCY ratio -- per token at one stream the transformer is FASTER at
+64k -- it is a MEMORY-CEILING ratio: per-GPU aggregate serving throughput, set by
+how many concurrent streams a card can hold. Compute lever x50.33 -> x9.24; the
+FY25 headline moved $165B -> $159B, which is the Amdahl saturation this model
+exists to show. See DECODE_THROUGHPUT_20260814 and SERVING_BLEND_20260814.
 """
 
 import math
@@ -261,17 +271,29 @@ DEPLOYMENT_SCALES = (
 )
 DEFAULT_DEPLOYMENT_SCALE = 1_000_000_000_000
 
-# ---- serving state: MEASURED ---------------------------------------------------
+# ---- serving state: MEASURED (FULL-MODEL scope, re-based 2026-08-14) -----------
 # The transformer's serving state grows with every token of context; ours does
-# not. Same session, same box, same dtype.
+# not. Same session, same box, same dtype, both families the whole model.
+#
+# RE-BASE NOTE. The figure this model used to carry -- a 0.15 MB bAttention decode
+# carry -- was an h-recurrence-carry PROXY that did not include the M memory. The
+# full-model state is 25.4 MB/stream, ~167x larger, and it is still CONSTANT in
+# context, which is the whole claim. Both scopes are kept below so no surface can
+# quote the proxy as if it were the model.
 SERVING_STATE_20260814 = {
     "status": "MEASURED",
-    "config": "d1536 / 26 layers / fp16, 8 x H100 80GB",
-    "tf_kv_mb_per_token_per_stream": 39936.0 / 262144,  # = 0.15234375 MB per token of context
-    "battn_state_mb_per_stream": 0.15234375,  # h-recurrence carry, CONSTANT in context
-    "battn_state_scope": "h-recurrence carry; the full recurrent cell (h + M memory) is ~21 MB/stream, also context-flat",
-    "tf_measured_point": "39,936 MB of KV for ONE 262,144-token stream; 8 streams OOM an 80 GB card",
-    "receipt": "bdm/docs/deck/build/derived.json (decode_multigpu, slide_decode_262k)",
+    "config": "d2048 / 24 layers / bf16, 1 x GH200 96 GB (94.5 GiB usable)",
+    # 51,539,607,552 B of KV for one 262,144-token stream = 196,608 B/token
+    "tf_kv_mb_per_token_per_stream": 196608 / 1e6,  # = 0.196608 MB (196.6 KB) per token of context
+    "battn_state_mb_per_stream": 25362432 / 1e6,  # = 25.362 MB FULL MODEL (h + M), CONSTANT in context
+    "battn_state_mb_per_stream_h_carry_proxy": 0.15234375,  # RETIRED as a headline: h-carry only, no M memory
+    "battn_state_scope": "FULL MODEL: the per-layer (h, M) state carry, 25.4 MB/stream (24.2 MiB measured), "
+    "context-flat. The 0.15 MB figure this model used to quote was an h-carry-only proxy with no M memory "
+    "and is retired as a headline",
+    "tf_measured_point": "51.5 GB of KV for ONE 262,144-token stream (196.6 KB per token of context per "
+    "stream); a 2nd stream OOMs the 96 GB card, and 16 streams OOM it at 32,768 tokens",
+    "battn_measured_point": "64 concurrent 262,144-token streams in 1.62 GB of state",
+    "receipt": "bdm/docs/deck_scaling/deck_decode_d2048_bf16_gh200_20260814.json (schema deck_decode_v1)",
 }
 
 # ---- single-GPU training step: MEASURED, AND IT RUNS AGAINST US ----------------
@@ -296,34 +318,200 @@ TRAINING_SCALING_20260814 = {
     "receipt": "bdm/docs/deck/build/derived.json (scaling_1to8_best, matched_load_curve)",
 }
 
+# ---- decode: MEASURED per-GPU SERVING THROUGHPUT -------------------------------
+# THE 2026-08-14 RE-BASE. The decode lever used to be a per-token-LATENCY ratio
+# resting on a transformer decode cost of 87.9 ms/token. That number was inflated
+# by a growing-KV re-planning artifact in the old harness, and the "53x decode"
+# and "decode x15.9" figures built on it are RETIRED.
+#
+# The honest per-token latency picture, from the new receipt's CUDA kernel traces
+# (single stream, GPU-busy, d2048/24L bf16 on one GH200):
+#
+#     ctx        2,048     8,192    32,768   262,144
+#     transformer 1.69 ms  1.99 ms   3.26 ms   14.92 ms   (linear: KV re-read)
+#     bAttention  5.69 ms  5.75 ms   5.75 ms    5.76 ms   (flat)
+#
+# OLS over those four transformer rows gives gpu_busy_us = 1584.0 + 0.050874*T
+# (worst residual 0.43%, exact at 262k), so at the scenario's 64k context the
+# transformer costs ~4.92 ms/token against our 5.74 ms flat. PER-TOKEN AT ONE
+# STREAM WE ARE BEHIND AT 64k -- the ratio is x0.86, in the transformer's favour.
+#
+# So the decode lever is NOT a latency lever. It is a MEMORY-CEILING lever, and
+# the serving-relevant quantity is per-GPU AGGREGATE THROUGHPUT: how many
+# concurrent streams fit, times how fast each is served.
+#
+#   * The transformer re-reads its whole KV cache every decoded token, so once
+#     the card is full of KV its aggregate rate is bandwidth-floored at
+#     BW / (kv_bytes_per_token * T) -- i.e. INVERSELY LINEAR IN CONTEXT.
+#   * Ours is context-flat because the state is context-flat.
+#
+# Two independent measured cells pin that law, and the transformer is at its
+# ceiling in both (the next stream OOMs):
+#
+#     ctx  32,768 :   8 streams -> 511.84 tok/s/GPU   (16 streams OOM)
+#     ctx 262,144 :   1 stream  ->  63.98 tok/s/GPU   ( 2 streams OOM)
+#
+# 511.84 * 32768/262144 = 63.980 vs the measured 63.976 -- the 1/T law reproduces
+# the far cell to 0.006%, so interpolating it to 64k is arithmetic, not a guess.
+DECODE_THROUGHPUT_20260814 = {
+    "status": "MEASURED",
+    "config": "d2048 / 24 layers / bf16, 1 x GH200 96 GB; autoregressive decode, prefill untimed",
+    # transformer: the anchor cell, at its KV memory ceiling
+    "tf_anchor_ctx": 32768,
+    "tf_anchor_tokens_per_s_per_gpu": 511.84161509663613,  # 8 streams; 16 OOM
+    "tf_far_cell": {"ctx": 262144, "streams": 1, "tokens_per_s": 63.976137240450086, "next_streams_status": "oom"},
+    "tf_law": "aggregate tok/s/GPU = anchor * (32768 / ctx): the KV budget is re-read once per decoded "
+    "token, so filling the card with KV and serving at the bandwidth floor makes throughput 1/T",
+    # bAttention: context-flat, measured at 64 concurrent streams
+    "battn_tokens_per_s_per_gpu": 562.0835756046827,  # 64 streams @ 262,144 ctx -- the LOWER of the two cells
+    "battn_cell_32k": 585.4143612476083,  # 64 streams @ 32,768 ctx
+    "battn_flat_note": "context-flat (-4.0% from 32k to 262k); the lower 262k cell is used everywhere",
+    # measured aggregate ratios -- the two cells the derived curve must reproduce
+    "measured_ratio_262k": 562.0835756046827 / 63.976137240450086,  # = 8.786
+    "measured_ratio_32k": 585.4143612476083 / 511.84161509663613,  # = 1.144
+    "conservatism": "BOTH sides of these cells run against us. The transformer is at 95.6% GPU-busy at its "
+    "ceiling cell (it has no headroom left), while bAttention's 64-stream cell is only 9.5% GPU-busy and "
+    "1.62 GB of state on a 96 GB card -- a grid cap, not a ceiling. Its decode also ran the unoptimised "
+    "Triton per-step path: the receipt records the CUDA M-forward twin declining the one-token step with "
+    "'mfwd: C != 64', and the compiled decode kernel is not reachable from the model. The measured "
+    "aggregate ratio is therefore a LOWER bound on us and an upper bound on the transformer",
+    "receipt": "bdm/docs/deck_scaling/deck_decode_d2048_bf16_gh200_20260814.json (schema deck_decode_v1)",
+    "figure": "bdm/docs/deck_scaling/context_decode_bf16_gh200_20260814.png",
+}
+
+
+def decode_throughput_ratio(ctx_tokens, kv_compression=1.0, d=None):
+    """DERIVED-FROM-MEASURED. Per-GPU serving throughput ratio at decode:
+    bAttention aggregate tokens/s over the transformer's, at a context.
+
+    This is the decode COST ratio -- if a GPU serves X tok/s one way and Y the
+    other, the cost per token goes as 1/X vs 1/Y -- and it is memory-ceiling
+    driven, not latency driven. It reproduces the two measured cells (x1.10 at
+    32k against the x1.14 measured, x8.79 at 262k against the x8.79 measured) and
+    crosses 1 at ~29,800 tokens: BELOW ~30k context the transformer serves more
+    tokens per GPU-second than we do, and the model says so.
+
+    kv_compression grants the transformer a mature KV stack (paged attention +
+    quantization). It divides our lever by the same factor -- see
+    SERVING_BLEND_20260814['sensitivity_kv8'] for what that does to the headline.
+    """
+    d = d or DECODE_THROUGHPUT_20260814
+    tf = d["tf_anchor_tokens_per_s_per_gpu"] * (d["tf_anchor_ctx"] / float(ctx_tokens)) * float(kv_compression)
+    return d["battn_tokens_per_s_per_gpu"] / tf
+
+
+# ---- prefill: MEASURED, UNCHANGED by the 2026-08-14 re-base --------------------
+# Prefill throughput (tokens/s per GPU) at d2048 in the bf16 SATURATED lane, each
+# family at its own saturating batch. Mirrors the deck's
+# PREFILL_TOKENS_PER_S_D2048 table exactly so the two models cannot drift.
+# (context, transformer tok/s, bAttention tok/s)
+PREFILL_TOKENS_PER_S_D2048 = {
+    2048: (4682606.88285999, 1185825.0),
+    8192: (3450080.0, 1183690.0),
+    32768: (1711802.0, 1186661.0),
+    65536: (1007187.0, 1181622.0),
+    131072: (541094.0, 978107.0),
+    262144: (277474.0, 726142.0),
+    524288: (140820.0, 478522.0),
+}
+
+
+def prefill_tokens_per_s(family, ctx_tokens):
+    """MEASURED. Prefill throughput at a context, log-interpolated between the
+    measured points of the bf16 saturated lane."""
+    idx = 0 if family == "transformer" else 1
+    pts = sorted(PREFILL_TOKENS_PER_S_D2048)
+    if ctx_tokens <= pts[0]:
+        return PREFILL_TOKENS_PER_S_D2048[pts[0]][idx]
+    if ctx_tokens >= pts[-1]:
+        return PREFILL_TOKENS_PER_S_D2048[pts[-1]][idx]
+    for lo, hi in zip(pts, pts[1:]):
+        if lo <= ctx_tokens <= hi:
+            a = PREFILL_TOKENS_PER_S_D2048[lo][idx]
+            b = PREFILL_TOKENS_PER_S_D2048[hi][idx]
+            f = (math.log(ctx_tokens) - math.log(lo)) / (math.log(hi) - math.log(lo))
+            return a * (b / a) ** f
+    return PREFILL_TOKENS_PER_S_D2048[pts[-1]][idx]
+
+
+def serving_blend(ctx_tokens=65536, in_out_ratio=10.0, kv_compression=1.0):
+    """The serving-workload compute blend: transformer serving cost over ours.
+
+    Cost is accumulated per GENERATED token -- `in_out_ratio` input tokens through
+    prefill plus one token through decode -- in GPU-seconds, so it is a cost ratio
+    and not an average of ratios. Prefill comes from the measured bf16 saturated
+    lane; decode from decode_throughput_ratio(), the memory-ceiling model fitted
+    to the 2026-08-14 cells. Returns each phase's ratio and the share of
+    transformer cost it accounts for, so a reader can see which phase the number
+    comes from."""
+    tf_pf_s = in_out_ratio / prefill_tokens_per_s("transformer", ctx_tokens)
+    ba_pf_s = in_out_ratio / prefill_tokens_per_s("bdm", ctx_tokens)
+    d = DECODE_THROUGHPUT_20260814
+    tf_dec_tps = d["tf_anchor_tokens_per_s_per_gpu"] * (d["tf_anchor_ctx"] / float(ctx_tokens)) * kv_compression
+    tf_dec_s = 1.0 / tf_dec_tps
+    ba_dec_s = 1.0 / d["battn_tokens_per_s_per_gpu"]
+    tf_total, ba_total = tf_pf_s + tf_dec_s, ba_pf_s + ba_dec_s
+    return {
+        "blend": tf_total / ba_total,
+        "prefill_ratio": tf_pf_s / ba_pf_s,
+        "decode_ratio": tf_dec_s / ba_dec_s,
+        "tf_decode_share_of_cost": tf_dec_s / tf_total,
+        "context_tokens": ctx_tokens,
+        "in_out_ratio": in_out_ratio,
+        "kv_compression": kv_compression,
+    }
+
+
 # ---- serving-workload compute blend: MEASURED ----------------------------------
 # Total transformer serving cost over a request divided by total bAttention cost,
-# at the deck's default operating point. A cost ratio, not an average of ratios.
-# Computed by the serving module of the deck build (epsilon-rnn
-# ai_capex_model.workload_compute_advantage) over the 2026-08-07/08 receipts;
-# mirrored here as a constant so this model and the deck quote one number.
-SERVING_BLEND_20260808 = {
-    "status": "MEASURED",
-    "blend": 11.929698,
-    "prefill_ratio": 1.173206,
-    "decode_ratio": 15.911024,
-    "tf_decode_share_of_cost": 0.973364,
+# at the deck's default operating point. A cost ratio, not an average of ratios:
+#     blend = 1 / ((1 - s)/prefill_ratio + s/decode_ratio),  s = decode's share
+#                                                                of transformer cost
+# The PREFILL half is unchanged -- same bf16 saturated prefill lane, same 64k
+# point, same x1.1732 -- because the 2026-08-14 receipt does not time prefill
+# (it states so explicitly: prefill only establishes the state). The DECODE half
+# is re-derived above and is what moved.
+SERVING_BLEND_20260814 = {
+    "status": "MEASURED (decode) x MEASURED (prefill, 2026-08-07/08 lane)",
+    "blend": 2.191475,
+    "prefill_ratio": 1.173191,  # UNCHANGED lane (published 1.173206; same table, tighter arithmetic)
+    "decode_ratio": 2.196318,  # = decode_throughput_ratio(65536); was 15.911024
+    "tf_decode_share_of_cost": 0.997465,  # was 0.973364
     "operating_point": "10:1 input:output, 64k average context, training excluded",
-    "caveat": "the transformer is granted an idealized mature stack (paged attention, KV /8, bandwidth-floor serving); "
-    "below ~4k context with input-heavy traffic the blend falls under 1 and we are behind",
-    "receipt": "bdm/docs/deck/build/derived.json (decode_multigpu, memory_wall_curves) via the deck's serving module",
+    "supersedes": {
+        "blend": 11.929698, "decode_ratio": 15.911024, "tf_decode_share_of_cost": 0.973364,
+        "why": "the old decode component rested on a transformer decode cost of 87.9 ms/token that a "
+        "growing-KV re-planning harness artifact had inflated, and on a bAttention decode throughput "
+        "measured on the h-carry-only proxy rather than the full model",
+    },
+    "crossover_ctx": 29839,  # the blend passes 1 here; below it the transformer is ahead at decode
+    "caveat": "MEMORY-CEILING, NOT LATENCY. At one stream and 64k context the transformer decodes a token "
+    "in ~4.9 ms against our ~5.7 ms -- it is FASTER per token. The lever is that it cannot hold many "
+    "64k streams on a card and we can. Below ~30k context the blend falls under 1 and we are behind",
+    "sensitivity_kv8": {
+        "blend": 0.278794, "decode_ratio": 0.274540,
+        "note": "granting the transformer an idealized mature stack (paged attention + KV quantization, "
+        "KV /8) divides the decode lever by 8 and puts the TRANSFORMER ahead at 64k. The measured cells "
+        "grant it no such thing, and neither family's decode is optimised in this receipt -- ours ran the "
+        "unoptimised Triton per-step path at 9.5% GPU-busy. The headline uses the measured cells and "
+        "carries this row as the stated downside",
+    },
+    "receipt": "bdm/docs/deck_scaling/deck_decode_d2048_bf16_gh200_20260814.json; prefill lane from "
+    "bdm/docs/deck/build/derived.json via the deck's serving module",
 }
 
 # Kernel operating points the compute lever can be evaluated at. The value is the
 # measured transformer-cost / bAttention-cost ratio at that point: above 1 we are
 # ahead, below 1 we are behind.
 KERNEL_OPERATING_POINTS = {
-    "Serving blend, 64k context (measured 2026-08-07/08)": SERVING_BLEND_20260808["blend"],
+    "Serving blend, 64k context (measured 2026-08-14)": SERVING_BLEND_20260814["blend"],
+    "Serving blend, 262k context (measured 2026-08-14)": 8.737893,
     "Long-context prefill, 1M tokens (measured 2026-07-21)": 4.016653993568674,
     "Kernels at parity (x1)": 1.0,
+    "Serving blend, 64k, granting the transformer KV /8": SERVING_BLEND_20260814["sensitivity_kv8"]["blend"],
     "Single-GPU training step, 2k context (measured 2026-08-14)": 1.0 / STEP_GAP_20260814["gap_against_battn"],
 }
-DEFAULT_KERNEL_POINT = "Serving blend, 64k context (measured 2026-08-07/08)"
+DEFAULT_KERNEL_POINT = "Serving blend, 64k context (measured 2026-08-14)"
 
 
 def param_matching_fraction(n_tf, fit=None):
@@ -382,8 +570,11 @@ SCENARIOS = {
         "dynamic": True,
         "blurb": "Equal fitted quality needs FEWER bAttention parameters as scale grows "
         "(FIT-DERIVED, 4 rungs per family), multiplied by the MEASURED cost ratio at the "
-        "chosen kernel operating point. Memory stays at the conservative /100 lever even "
-        "though the measured serving-state ratio is far larger.",
+        "chosen kernel operating point. That measured factor is a SERVING-THROUGHPUT ratio "
+        "set by the memory ceiling -- how many concurrent streams a GPU can hold -- not a "
+        "per-token latency ratio; per token at one stream the transformer is faster at 64k. "
+        "Memory stays at the conservative /100 lever even though the measured serving-state "
+        "ratio is far larger.",
     },
     "Measured (H100 2026-07-21: compute x4)": {
         "flop_factor": 4.0,
@@ -508,12 +699,33 @@ def global_estimate(total, g):
 
 
 def _selfcheck():
-    """param_matching_fraction() must reproduce the sealed receipt table."""
+    """Every published constant must be re-derivable from the receipts.
+
+    1. param_matching_fraction() reproduces the sealed receipt table.
+    2. decode_throughput_ratio() reproduces both MEASURED aggregate cells.
+    3. The published SERVING_BLEND_20260814 constants are what serving_blend()
+       computes -- so the mirrored constant can never drift from its own math.
+    """
     worst = 0.0
     for n_tf, pct in PARAM_MATCHING_PCT_20260814.items():
         got = param_matching_fraction(n_tf) * 100.0
         worst = max(worst, abs(got - pct))
     assert worst < 1e-6, f"parameter-matching curve drifted from the receipt by {worst}"
+
+    d = DECODE_THROUGHPUT_20260814
+    # the 1/T law is anchored at 32k, so 262k is the out-of-sample check
+    assert abs(decode_throughput_ratio(262144) / d["measured_ratio_262k"] - 1) < 1e-4, (
+        "the 1/T decode law no longer reproduces the measured 262k aggregate cell"
+    )
+    assert abs(decode_throughput_ratio(32768) / d["measured_ratio_32k"] - 1) < 0.05, (
+        "the 1/T decode law drifted from the measured 32k aggregate cell by >5%"
+    )
+
+    b = SERVING_BLEND_20260814
+    got = serving_blend()
+    for k in ("blend", "prefill_ratio", "decode_ratio", "tf_decode_share_of_cost"):
+        assert abs(got[k] - b[k]) < 1e-5, f"published {k} {b[k]} != derived {got[k]}"
+    assert abs(serving_blend(kv_compression=8.0)["blend"] - b["sensitivity_kv8"]["blend"]) < 1e-5
     return worst
 
 
@@ -534,7 +746,32 @@ if __name__ == "__main__":
         f"x{STEP_GAP_20260814['gap_against_battn']:.2f} MORE, not less "
         f"({STEP_GAP_20260814['battn_ms_per_step']:,.0f} vs {STEP_GAP_20260814['tf_ms_per_step']:,.0f} ms/step)"
     )
-    print("== serving state, MEASURED (transformer KV grows per token; ours does not) ==")
+    print("== decode lever, MEASURED: per-GPU SERVING THROUGHPUT, not per-token latency ==")
+    _d = DECODE_THROUGHPUT_20260814
+    print(
+        f"  per-token at ONE stream, 64k: transformer ~4.92 ms vs ours ~5.74 ms GPU-busy "
+        f"-> x0.86, the TRANSFORMER is ahead"
+    )
+    print(
+        f"  per-GPU aggregate at the memory ceiling (transformer OOMs at the next stream in both cells):"
+    )
+    for ctx in (4096, 32768, 65536, 262144, 1048576):
+        tf = _d["tf_anchor_tokens_per_s_per_gpu"] * (_d["tf_anchor_ctx"] / ctx)
+        print(
+            f"    ctx {ctx:>9,}: transformer {tf:>9,.1f} tok/s/GPU  vs  ours "
+            f"{_d['battn_tokens_per_s_per_gpu']:>7,.1f} (flat)  ->  x{decode_throughput_ratio(ctx):>7.2f}"
+        )
+    print(
+        f"    measured cells: x{_d['measured_ratio_32k']:.2f} at 32k, x{_d['measured_ratio_262k']:.2f} at 262k; "
+        f"the lever crosses 1 at ~{SERVING_BLEND_20260814['crossover_ctx']:,} tokens"
+    )
+    print("== serving state, MEASURED, FULL MODEL (transformer KV grows per token; ours does not) ==")
+    _ss = SERVING_STATE_20260814
+    print(
+        f"  transformer {_ss['tf_kv_mb_per_token_per_stream'] * 1000:.1f} KB of KV per token of context per stream; "
+        f"ours a constant {_ss['battn_state_mb_per_stream']:.1f} MB/stream "
+        f"(the retired h-carry proxy said {_ss['battn_state_mb_per_stream_h_carry_proxy']:.2f} MB and left out the M memory)"
+    )
     for ctx in (4096, 65536, 262144, 1048576):
         print(
             f"  ctx {ctx:>9,}: x{serving_state_ratio(ctx):>12,.0f} raw  |  "
@@ -550,6 +787,21 @@ if __name__ == "__main__":
         f"(${_t25['capitalized'] / 1000:.1f}T capitalized), FY26 ${_t26['spend_cut']:.0f}B/yr ==\n"
         "   (the tables below use GLOBALS, which still carry the x10 ceiling lever "
         "so the generated workbook is unchanged)"
+    )
+    _sup = SERVING_BLEND_20260814["supersedes"]
+    _og = dict(GLOBALS, flop_factor=param_matching_gain(DEFAULT_DEPLOYMENT_SCALE) * _sup["blend"])
+    _, _ot25 = compute_year(_og, COMPANIES, "fy25")
+    _kg = dict(GLOBALS, flop_factor=param_matching_gain(DEFAULT_DEPLOYMENT_SCALE)
+               * SERVING_BLEND_20260814["sensitivity_kv8"]["blend"])
+    _, _kt25 = compute_year(_kg, COMPANIES, "fy25")
+    print(
+        f"   re-base: the retired blend x{_sup['blend']:.2f} gave flop x{_og['flop_factor']:.2f} -> "
+        f"x{reduction_factor(_og):.1f} -> ${_ot25['spend_cut']:.0f}B/yr. The compute lever fell "
+        f"{_og['flop_factor'] / _g['flop_factor']:.1f}x; the DOLLARS moved "
+        f"{100 * (_t25['spend_cut'] / _ot25['spend_cut'] - 1):+.1f}% -- that is the Amdahl saturation the model exists to show.\n"
+        f"   downside row: granting the transformer KV /8 gives blend "
+        f"x{SERVING_BLEND_20260814['sensitivity_kv8']['blend']:.2f} -> flop x{_kg['flop_factor']:.2f} -> "
+        f"x{reduction_factor(_kg):.1f} -> ${_kt25['spend_cut']:.0f}B/yr"
     )
     print()
     for yr in ("fy25", "fy26"):
