@@ -496,7 +496,7 @@ def evidence_tab(g):
     section("2026-08-14 decode (MEASURED) — a memory-ceiling lever, not a latency lever")
     dt = DECODE_THROUGHPUT_20260814
     show_table(["Context (tokens)", "Transformer (tokens/s per GPU)", "bAttention (tokens/s per GPU)", "Decode lever"],
-               [[(f"{c:,}" + ("  ← measured cell" if c in (32768, 262144) else ""), ""),
+               [[(f"{c:,}" + ("  ← measured, ceiling exact" if c == 262144 else "  ← measured at 8 streams" if c == 32768 else ""), ""),
                  (f"{dt['tf_anchor_tokens_per_s_per_gpu'] * dt['tf_anchor_ctx'] / c:,.1f}", "b"),
                  (f"{dt['battn_tokens_per_s_per_gpu']:,.1f}", "b"),
                  (f"×{decode_throughput_ratio(c):,.2f}", "b")]
@@ -507,9 +507,13 @@ def evidence_tab(g):
         "×15.9 decode lever rested on an inflated transformer per-token cost that is now retired. What the "
         "transformer cannot do is hold many long-context streams on one card: it re-reads its whole KV cache "
         "every token, so once the card is full its tokens per second falls as 1/context. Ours is context-flat. "
-        f"Two measured cells pin it — at 32,768 tokens the transformer manages 8 streams and OOMs at 16 "
-        f"(×{dt['measured_ratio_32k']:.2f}); at 262,144 it manages 1 and OOMs at 2 (×{dt['measured_ratio_262k']:.2f}). "
-        "The 1/context law anchored on the first reproduces the second to 0.006%, so the rows between them are "
+        f"Two measured cells pin it — at 262,144 tokens the transformer manages 1 stream and OOMs at 2, an exact "
+        f"ceiling (×{dt['measured_ratio_262k']:.2f} measured); at 32,768 it ran 8 streams and OOMed at 16, so that "
+        f"ceiling is only bracketed (8–15) and the cell is a range, "
+        f"×{dt['ratio_32k_bounded'][0]:.2f}–{dt['ratio_32k_bounded'][1]:.2f} — near parity, since whatever fits, "
+        f"32k decode is bandwidth-capped at ~{dt['tf_32k_aggregate_bandwidth_cap_tokens_per_s']:.0f} tok/s against "
+        f"our 585.4. "
+        "The 1/context law anchored on the 32k cell reproduces the 262k one to 0.006%, so the rows between them are "
         f"arithmetic. The lever crosses 1 at ~{SERVING_BLEND_20260814['crossover_ctx']:,} tokens: **below that the "
         f"transformer serves more tokens per GPU-second than we do.** {dt['conservatism']} Receipt: `{dt['receipt']}`."
     )
@@ -605,7 +609,9 @@ the decode lever now means — is a **memory ceiling**: the transformer re-reads
 every token it emits, so once a card is full of KV its aggregate throughput falls as 1/context, while
 ours is flat. Measured on one GPU: at 262,144 tokens the transformer fits **one** stream (a second OOMs)
 and serves 64 tokens/s, while bAttention holds **64** streams in 1.6 GB and serves 562 tokens/s — an
-**×8.8 aggregate advantage**. At 32,768 tokens the same comparison is ×1.1, and the lever crosses 1 near
+**×8.8 aggregate advantage**, and that ceiling is exact (a second stream OOMs). At 32,768 tokens the same
+comparison is bounded rather than pinned — ×0.97–1.14, near parity, because 8 streams ran and 16 OOMed so the
+ceiling there is only bracketed at 8–15 — and the lever crosses 1 near
 **30,000 tokens**: below that context the transformer serves more tokens per GPU-second than we do. The
 64k figure (×2.20) is interpolated on that 1/context law, which reproduces the far measured cell to
 0.006%. The old ×15.9 decode lever, the "×53 decode" line and the "512 concurrent streams" figure are
