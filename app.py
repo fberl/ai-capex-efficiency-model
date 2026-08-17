@@ -159,7 +159,11 @@ def sidebar_globals():
         f"parameter ratio ×{_gain:.2f} at {scale_label} (fit-derived) = **×{_today:.2f}**"
         f"{_floor_note} — tracks the sliders above. **Ceiling** = measured prefill ×4.02 × "
         f"{CEILING_PREFILL_SPEEDUP:.1f} kernel-campaign speedup = **×{CEILING_FLOP_LEVER:.1f}**; "
-        f"under Ceiling the FLOPs number below can be edited freely. Derivation: Methodology tab."
+        f"under Ceiling the FLOPs number below can be edited freely. The two differ only ~3% in "
+        f"dollars **by design**: the cut is accel × (1−1/R) and saturates, so the money is mostly "
+        f"captured at ~20× — the scenarios differ in the reduction (×{reduction_factor(dict(g, flop_factor=_today)):.0f} "
+        f"vs ×{reduction_factor(dict(g, flop_factor=CEILING_FLOP_LEVER)):.0f}) and the residual compute "
+        f"bill, not the headline. Derivation: Methodology tab."
     )
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
