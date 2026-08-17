@@ -250,7 +250,7 @@ def build_inputs(inp):
     put(inp, 23, 4,
         "FIT-DERIVED (sealed 2026-08-14 refit): bAttention matches the transformer fit's quality on "
         "23.7% of the params at 1T -> x4.22 compute per token at equal quality. 84.2% at 1B, 55.2% at "
-        "10B, 36.2% at 100B. A projection of the two fits, not a measurement.", wrap=True)
+        "10B, 36.2% at 100B, 15.5% at 10T (x6.44). A projection of the two fits, not a measurement.", wrap=True)
     put(inp, 24, 1, "TODAY compute lever = blend x ratio", bold=True)
     put(inp, 24, 2, "=ServingTraining!$B$28*$B$23", fmt="0.00", fill=CALC_FILL, border=True, bold=True)
     put(inp, 24, 3, "x")

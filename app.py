@@ -122,6 +122,7 @@ def sidebar_globals():
         "10B": 10_000_000_000,
         "100B": 100_000_000_000,
         "1T": 1_000_000_000_000,
+        "10T": 10_000_000_000_000,
     }
     st.session_state.setdefault("deploy_scale", "1T")
     scale_label = s.select_slider(
