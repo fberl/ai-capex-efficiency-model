@@ -16,7 +16,7 @@ import pandas as pd
 
 from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             SERVING_TRAINING_ASSUMPTIONS, PREFILL_BF16_D2048_SWEEP,
-                            PREFILL_FP32_D2048_SWEEP, WORKLOAD,
+                            WORKLOAD,
                             workload_compute_advantage, reduction_factor,
                             energy_reduction, compute_company, compute_year,
                             global_estimate, serving_economics, serving_cost_curve,
@@ -470,15 +470,11 @@ def serving_training_tab(g):
     show_table(["Context (tokens)", "bAttention $/1M tok", "Transformer $/1M tok (mature stack)",
                 "TF streams/GPU", "Cost ratio", "Note"], rows,
                widths={"Note": "large"})
-    st.caption("**Re-based 2026-08-14 on the full-model decode receipt.** bAttention: MEASURED 562 tok/s/GPU "
-               "(64 concurrent 262,144-token streams in 1.62 GB, context-flat 32k–262k). Transformer: KV wall "
-               "measured at 197 KB per token of context per stream — 51.5 GB for one 262k stream, a second "
-               "OOMs the card — and it re-reads that whole cache per emitted token, so its aggregate "
-               "throughput falls as 1/context. The ratio ≈ context/29,800: **the transformer is AHEAD below "
-               "~30k context**, ×2.2 at 64k, ×8.8 at 262k. This is a memory-ceiling result, not a per-token "
-               f"one: at one stream and 64k the transformer is faster per token than we are. Granting it "
-               f"KV ÷8 divides our lever by 8 and puts it ahead at 64k. Per-stream state: 25.4 MB full model "
-               f"(h + M) — the 0.15 MB previously quoted was an h-carry-only proxy — against 51.5 GB of KV.")
+    st.caption("A memory-ceiling result, not per-token: our decode is context-flat (562 tok/s/GPU — "
+               "64 concurrent 262k streams in 1.62 GB) while the transformer's aggregate falls as "
+               "1/context once the card is full of KV (197 KB per token of context per stream). "
+               "**It is AHEAD below ~30k context**; ×2.2 at 64k, ×8.8 at 262k. Full derivation and "
+               "the retired figures: Methodology tab.")
 
     section("Training at scale — same cluster, more steps/s")
     show_table(["Metric", "bAttention", "Transformer", "Ratio", "Status"], [
@@ -532,13 +528,11 @@ def serving_training_tab(g):
                "200.9 vs 21.7 TF/s), crossing over near T≈88k. Setting a training share above ~0.06 "
                "takes the blend below 1.")
 
-    section("The prefill lane on its own")
-    st.caption("The comparison exists in two lanes, both shown. The lever is taken from the bf16 "
-               "lane, where both families run their production attention kernels: FlashAttention "
-               "has no fp32 kernel, so the fp32 lane runs mem-efficient attention on the "
-               "transformer instead. The fp32 lane's advantage is scope — 24 layers rather than one.")
-    st.markdown("**bf16 lane (sets the lever)** — FlashAttention available to the transformer, "
-                "parameter counts exactly matched, 1 layer / batch 16, one H100, 2026-07-21.")
+    section("The prefill lane (16-bit, parameter-matched)")
+    st.caption("Measured where both families run their production 16-bit attention kernels — the "
+               "lane the competition actually serves in — with parameter counts exactly matched: "
+               "1 layer / batch 16, one H100, 2026-07-21. The fp32 full-model sweep is retired to "
+               "the Evidence tab as a scope reference.")
     prow = []
     for T, tf_ms, ba_ms in PREFILL_BF16_D2048_SWEEP:
         ratio = tf_ms / ba_ms
@@ -556,47 +550,6 @@ def serving_training_tab(g):
                f"with context and falls with width; below the crossover the transformer is faster "
                f"and the model says so. Receipts: "
                f"`experiments/paper_figures/output/matched_d{{512,1024,2048}}_h100.json`.")
-
-    st.markdown("**fp32 lane** — the same comparison at d2048, 24 layers / batch 1, full-model scope.")
-    frow = []
-    for T, tf_ms, ba_ms in PREFILL_FP32_D2048_SWEEP:
-        ratio = tf_ms / ba_ms
-        note, tone = ("transformer ahead", "b") if ratio < 1.0 else ("", "y")
-        if T == 262144:
-            note, tone = "×3.9 the bf16 lane at the same width/context", "y"
-        frow.append([(f"{T:,}", ""), (f"{tf_ms:,.1f}", "b"), (f"{ba_ms:,.1f}", "y"),
-                     (f"×{ratio:.2f}", tone), (note, "")])
-    show_table(["Context (tokens)", "Transformer ms", "bAttention ms", "TF ÷ bAttention", "Note"],
-               frow, widths={"Note": "medium"})
-    st.caption("Lane details from the receipt: `sdpa_fp32_backend_probe` records FLASH_ATTENTION and "
-               "CUDNN_ATTENTION as 'rejected: No available kernel' (there is no fp32 Flash kernel), "
-               "and the owned arm's `last_route_attestation` reads `dtype_mix: io=fp32,bf_col=fp16`. "
-               "Parameters differ by 16.7% here against an exact match in the bf16 lane. Full model "
-               "in bf16 is the one cell not yet run. This lane's memory column is prefill "
-               "activation peak, a different quantity from the ÷100 decode/serving-state lever.")
-
-    section("16-bit IO in training")
-    st.caption("A training step-time gate: same architecture on every row, only the IO dtype "
-               "varies. d1536 / 27 layers / block 2048 / batch 32 / seed 1, one GH200 480GB, GPU "
-               "verified idle before each arm, steady state only. This is why the production "
-               "training lane is 16-bit; it is not an input to the compute lever above.")
-    _io_fp32_gb = MEASURED["io16_fp32_peak_mb"] / 1024
-    show_table(["IO dtype", "s/step", "Speed vs fp32", "Peak allocated", "Memory vs fp32", "Val cost"], [
-        [("fp32", ""), (f"{MEASURED['io16_fp32_s_per_step']:.3f}", "b"),
-         ("1.000×", ""), (f"{_io_fp32_gb:.1f} GB", "b"), ("baseline", ""), ("—", "")],
-        [("fp16", ""), (f"{MEASURED['io16_fp16_s_per_step']:.3f}", "g"),
-         (f"×{MEASURED['io16_fp16_speedup']:.3f}", "s"),
-         (f"{MEASURED['io16_fp16_peak_mb'] / 1024:.1f} GB", "g"),
-         (f"−{(1 - MEASURED['io16_fp16_mem_ratio']) * 100:.1f}%", "s"), ("+0.00128", "y")],
-        [("bf16", ""), (f"{MEASURED['io16_bf16_s_per_step']:.3f}", "g"),
-         (f"×{MEASURED['io16_bf16_speedup']:.3f}", "s"),
-         (f"{MEASURED['io16_bf16_peak_mb'] / 1024:.1f} GB", "g"),
-         (f"−{(1 - MEASURED['io16_bf16_mem_ratio']) * 100:.1f}%", "s"), ("+0.00391", "y")],
-    ], widths={"IO dtype": "large"})
-    st.caption("0 skipped steps on all three arms; verdict PASS_io16_SHIPS. Throughput and memory "
-               "rows are d1536/L27; the val deltas come from the gate's smaller vehicle (width 512, "
-               "15 layers). Receipt: "
-               "`experiments/paper_figures/output/receipts/io16_gate_20260809.md`.")
 
     section("Assumptions — one row each (MEASURED / PROJECTION / ASSUMPTION)")
     show_table(["Assumption", "Value", "Status", "Source"],
@@ -742,15 +695,11 @@ tokens**) and measured directly as a concurrency result (below).
 **×0.44**). Both are reachable in the sidebar, because a lever you cannot push until it breaks is not
 a model.
 
-**Both prefill lanes.** The same comparison exists in two lanes and the Serving·Training tab shows both.
-bf16 (the lever): FlashAttention available to the transformer, parameters exactly matched, one layer —
-×4.02 at d512/1M, ×2.01 at d2048/262k. fp32, d2048 / 24 layers: ×7.91 at 262k, full-model scope, and
-FlashAttention has no fp32 kernel so that lane runs mem-efficient attention instead. The lever is taken
-from the bf16 lane.
-
-**16-bit IO in training.** ×1.185 step time at −17.5% peak memory (bf16 ×1.171 at −20.6%), same
-architecture at d1536 on a GH200. A training result, reported on its own; it is not an input to the
-compute lever, which is already measured in a 16-bit lane.
+**One lane: 16-bit.** The lever is measured where both families run their production 16-bit attention
+kernels, parameters exactly matched — ×4.02 at d512/1M, ×2.01 at d2048/262k — the lane the competition
+actually serves in. 16-bit is also the production training lane (own-baseline gate: ×1.185 step time,
+−17.5% peak memory). The fp32 full-model sweep (×7.91 at 262k; no fp32 flash-attention kernel exists)
+is kept on the Evidence tab as a scope reference only.
 
 **Decode re-based 2026-08-14 (Serving·Training tab), and it fell.** A full-model bf16 measurement
 (d2048/24 layers, both families, one GH200, same session) retired two numbers this model used to
@@ -794,7 +743,7 @@ non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 
 
 **Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. **Today** (quality-matched
 at 1T, ~20×, the default): spend cut ~\$159B → burn ~−\$136B (~\$2.6T capitalized at the 6% rate; global
-est ~\$3.3T FY25, ~\$7.0T FY26). On FY2026 guidance the cut grows to ~\$337B. **Ceiling** (~41×): ~\$163B
+est ~\$3.3T FY25, ~\$7.6T FY26). On FY2026 guidance the cut grows to ~\$366B. **Ceiling** (~41×): ~\$163B
 FY25. The cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying capex, shares
 and revenue never move.
 

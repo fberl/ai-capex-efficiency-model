@@ -1106,11 +1106,11 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$337B/yr (~$5.6T). Ceiling: ~$163B FY25.",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$366B/yr (~$6.1T). Ceiling: ~$163B FY25.",
             False,
         ),
         (
-            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.3T, FY26 ~$7.0T capitalized. Clearly an estimate.",
+            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.3T, FY26 ~$7.6T capitalized. Clearly an estimate.",
             False,
         ),
         ("", False),
@@ -1205,7 +1205,7 @@ def build_serving_training(ws):
     in ai_capex_model.MEASURED. Green = measured, yellow = assumption/projection,
     blue = derived."""
     from ai_capex_model import (MEASURED, SERVING, SERVING_TRAINING_ASSUMPTIONS,
-                                PREFILL_BF16_D2048_SWEEP, PREFILL_FP32_D2048_SWEEP,
+                                PREFILL_BF16_D2048_SWEEP,
                                 PREFILL_TOKENS_PER_S_D2048, KV_MB_PER_TOKEN_PER_STREAM,
                                 TRAIN_ADVANTAGE_SHORT_SEQ,
                                 serving_cost_curve, serving_economics,
@@ -1304,7 +1304,7 @@ def build_serving_training(ws):
         "SCOPE: the serving and training blocks below are component-scope systems benches (bAttention "
         "d1536 fwd+bwd h-recurrence sub-block vs transformer d2048 forward-only layer); every speedup "
         "there is each family vs its OWN 1-GPU baseline. The prefill lanes quoted further down are "
-        "cross-family: bf16 parameter-matched at block scope, and fp32 at full-model scope.",
+        "cross-family: 16-bit parameter-matched at block scope (the fp32 full-model sweep is retired to an assumption row).",
         wrap=True)
 
     header(ws, 43, "Serving at long context — $/1M generated tokens, one 8xH100 box")
@@ -1381,65 +1381,24 @@ def build_serving_training(ws):
         wrap=True)
     r += 2
     put(ws, r, 1,
-        "The prefill component itself exists in two lanes, both shown below. It comes from the bf16 lane, where "
-        "both families run their production attention kernels (there is no fp32 FlashAttention kernel). "
-        "BF16 LANE: parameter counts exactly matched, 1 layer, batch 16, 1 x H100 80GB HBM3, 2026-07-21 — "
-        "x4.02 at d512/1M, x3.83 at d1024/1M, x2.01 at d2048/262k. Receipts: "
+        "The prefill component, 16-bit and parameter-matched — the lane the competition serves in. "
+        "Parameter counts exactly matched, 1 layer, batch 16, 1 x H100 80GB HBM3, 2026-07-21 — "
+        "x4.02 at d512/1M, x3.83 at d1024/1M, x2.01 at d2048/262k. The fp32 full-model sweep and the "
+        "own-baseline 16-bit-IO training gate are retired to one assumption row each below. Receipts: "
         "experiments/paper_figures/output/matched_d{512,1024,2048}_h100.json",
         wrap=True)
     r += 2
-    for c, t in enumerate(["Context (tokens)", "Transformer ms", "bAttention ms", "TF / bAttention", "", "Lane / note"], start=1):
+    for c, t in enumerate(["Context (tokens)", "Transformer ms", "bAttention ms", "TF / bAttention", "", "Note"], start=1):
         put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
     r += 1
-    for label, sweep, fill in (("bf16 (lever)", PREFILL_BF16_D2048_SWEEP, DATA_FILL),
-                               ("fp32 (full model)", PREFILL_FP32_D2048_SWEEP, INPUT_FILL)):
-        for T_tok, tf_ms, ba_ms in sweep:
-            ratio = tf_ms / ba_ms
-            note = label + (" — transformer ahead" if ratio < 1.0 else "")
-            put(ws, r, 1, T_tok, "#,##0", border=True)
-            put(ws, r, 2, tf_ms, "#,##0.0", fill=CALC_FILL, border=True)
-            put(ws, r, 3, ba_ms, "#,##0.0", fill=fill, border=True)
-            put(ws, r, 4, ratio, "0.00×", fill=CALC_FILL, border=True)
-            put(ws, r, 6, note, wrap=True, border=True)
-            r += 1
-    put(ws, r, 1,
-        "Both blocks are d2048, so the lanes are directly comparable: 2.01x in bf16 against 7.91x in fp32 "
-        "at 262k. The fp32 lane is full-model scope (24 layers, batch 1) and its receipt records "
-        "FLASH_ATTENTION and CUDNN_ATTENTION as 'rejected: No available kernel', with the owned arm's "
-        "route attestation reading dtype_mix io=fp32,bf_col=fp16; its params differ by 16.7%. Full model "
-        "in bf16 has not been run. Receipt: "
-        "experiments/paper_figures/output/deck_speed_scaling_d2048_h100_20260803.json", wrap=True)
-    r += 2
-
-    header(ws, r, "16-bit IO in training")
-    r += 1
-    put(ws, r, 1,
-        "A training step-time gate: same architecture on every row, only the IO dtype varies. "
-        "d1536 / 27 layers / block 2048 / batch 32 / seed 1, 1 x GH200 480GB, GPU verified idle before "
-        "each arm, steady state only. 0 skipped steps on all arms; verdict PASS_io16_SHIPS. Throughput "
-        "and memory rows are d1536/L27; the val deltas come from the gate's smaller vehicle (width 512, "
-        "15 layers). This is why the production training lane is 16-bit; it is not an input to the "
-        "compute lever above. Receipt: experiments/paper_figures/output/receipts/io16_gate_20260809.md",
-        wrap=True)
-    r += 2
-    for c, t in enumerate(["IO dtype", "s/step", "Speed vs fp32", "Peak allocated (GB)", "Memory vs fp32", "Val cost @601 steps"], start=1):
-        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
-    r += 1
-    io_rows = [
-        ("fp32", MEASURED["io16_fp32_s_per_step"], 1.0,
-         MEASURED["io16_fp32_peak_mb"] / 1024, 1.0, "baseline"),
-        ("fp16", MEASURED["io16_fp16_s_per_step"], MEASURED["io16_fp16_speedup"],
-         MEASURED["io16_fp16_peak_mb"] / 1024, MEASURED["io16_fp16_mem_ratio"], "+0.00128"),
-        ("bf16", MEASURED["io16_bf16_s_per_step"], MEASURED["io16_bf16_speedup"],
-         MEASURED["io16_bf16_peak_mb"] / 1024, MEASURED["io16_bf16_mem_ratio"], "+0.00391"),
-    ]
-    for name, sps, spd, gb, memr, val in io_rows:
-        put(ws, r, 1, name, border=True)
-        put(ws, r, 2, sps, "0.000", fill=DATA_FILL, border=True)
-        put(ws, r, 3, spd, "0.000×", fill=CALC_FILL, border=True)
-        put(ws, r, 4, gb, "0.0", fill=DATA_FILL, border=True)
-        put(ws, r, 5, memr, "0.000×", fill=CALC_FILL, border=True)
-        put(ws, r, 6, val, border=True)
+    for T_tok, tf_ms, ba_ms in PREFILL_BF16_D2048_SWEEP:
+        ratio = tf_ms / ba_ms
+        note = "transformer ahead" if ratio < 1.0 else ""
+        put(ws, r, 1, T_tok, "#,##0", border=True)
+        put(ws, r, 2, tf_ms, "#,##0.0", fill=CALC_FILL, border=True)
+        put(ws, r, 3, ba_ms, "#,##0.0", fill=DATA_FILL, border=True)
+        put(ws, r, 4, ratio, "0.00×", fill=CALC_FILL, border=True)
+        put(ws, r, 6, note, wrap=True, border=True)
         r += 1
     r += 1
 
