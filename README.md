@@ -17,11 +17,10 @@ factors that are labelled separately everywhere they appear:
   ~linear in parameters, so 23.7% of the parameters is a **×4.22 compute-per-token advantage
   at equal quality** at trillion-parameter scale. This is a *projection of two fits, not a
   measurement*, and every point past ~1B extrapolates beyond the measured rungs.
-- **MEASURED — serving-throughput ratio at a chosen operating point.** Default is the **×2.19**
-  serving blend at 64k context / 10:1 input:output. Other selectable points: ×8.74 at 262k
-  context, ×4.02 long-context prefill at 1M tokens (2026-07-21), ×1 parity, ×0.28 granting the
-  transformer an idealized KV÷8 stack, and **×0.15 — the single-GPU training step at
-  2,048-token context, where we are ×6.46 *slower***.
+- **MEASURED — serving-throughput ratio at the workload operating point.** Default is the **×2.19**
+  serving blend at 64k context / 10:1 input:output, computed live from the sidebar's workload
+  sliders (input:output ratio, expected context, training share). The blend crosses below 1 at
+  short context, input-heavy mixes, or a training share above ~0.06 — the model says so.
 
 At 1T scale with the serving blend the lever is ×9.24 → **~20.3× cost-weighted** →
 **~$159B/yr** of FY2025 spend removed across the named firms. Memory stays at the deliberate
@@ -81,8 +80,9 @@ lever is worth 3.6% of the money. The stated downside row — granting the trans
 KV÷8 mature stack, which drops the blend to ×0.28 and the compute lever to ×1.18 — takes the cut to
 ~$109B; the headline uses the measured cells, in which neither family's decode is optimised.
 
-Every earlier scenario is kept in the sidebar: 2026-07-21 measured (compute ×4 → ~9.4×),
-ceiling (×10 → ~22×), memory-only (×1 → ~2.5×). Each is applied bottom-up to each company's
+Two scenarios (2026-08-17 ruling): **Today** — the quality-matched lever above (~20×) — and
+**Ceiling** — the measured prefill lever ×4.02 × a 5.5× kernel-campaign speedup = ×22.1 (~41×).
+Any other lever can be typed into the sidebar. Each is applied bottom-up to each company's
 disclosed capex to size the **avoided spend** and its **capitalized value**.
 
 Coverage: the 6 largest AI-capex spenders (Microsoft, Alphabet, Amazon, Meta, Oracle,
@@ -125,12 +125,10 @@ pip install -r requirements.txt && streamlit run app.py
 
 | Scenario | FLOPs lever | Cost-weighted | FY25 spend cut | Basis |
 |---|---|---|---|---|
-| **Quality-matched (2026-08-14)** — default | ×9.24 at 1T scale (×4.22 FIT × ×2.19 MEASURED) | ~20.3× | ~$159B/yr | sealed quality refit + 2026-08-14 full-model decode receipt |
-| Measured (H100 2026-07-21) | ×4 | ~9.4× | ~$149B/yr | parameter-matched bf16 prefill at 1M tokens |
-| Ceiling (kernels mature) | ×10 | ~21.7× | ~$159B/yr | architectural ceiling |
-| Memory-only (compute parity) | ×1 | ~2.5× | ~$99B/yr | credits nothing to compute |
+| **Today** — default | ×9.24 at 1T scale (×4.22 FIT × ×2.19 MEASURED) | ~20.3× | ~$159B/yr | sealed quality refit + 2026-08-14 full-model decode receipt |
+| Ceiling (prefill kernels mature) | ×22.1 (measured prefill ×4.02 × 5.5 speedup) | ~41× | ~$163B/yr | kernel-campaign target, prefill-anchored |
 
-The FY25 cut spans only ~$99B–$159B across a 10× spread in the compute lever, because the cut is
+The FY25 cut moves only ~$159B → ~$163B between the scenarios (and ~$99B at a manual compute-parity ×1), because the cut is
 `accelerator capex × (1 − 1/reduction)` and saturates. **Doubling the multiple is worth a few $B.**
 That is the honest shape of the result and the reason the model refuses multiplicative headlines.
 
@@ -152,7 +150,7 @@ aggregate cells, and asserts the published serving-blend constants equal what `s
 
 ## How it works
 
-- **Engine:** cost-weighted reduction `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` — ≈20.3× quality-matched at 1T (flop ×9.24), ≈9.4× at the 2026-07-21 measured lever (flop ×4), ≈22× ceiling (flop ×10).
+- **Engine:** cost-weighted reduction `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` — ≈20.3× Today (flop ×9.24 quality-matched at 1T); ≈41× Ceiling (flop ×22.1).
 - **Per company:** `total capex (disclosed) × infra share × server share × accelerator share`
   → accelerator capex → fleet → energy/opex → avoided spend → capitalized value. FY2025 actual + FY2026 estimate.
 - **Net AI economics (cash basis):** `AI revenue − AI capex − AI opex`; with the architecture, add the spend cut.
@@ -177,4 +175,4 @@ uv run --with openpyxl python ai_capex_efficiency.py
 Cash basis (capex not depreciated). Totals are disclosed; server/accelerator splits are estimated
 from BOM teardowns and CFO commentary (±15–20%). AI revenue is the softest input — Microsoft
 ($37B) and Amazon ($15B) run-rates are disclosed; the rest are estimates. The capitalization is a
-simple perpetuity (benefit ÷ discount rate). This is an analytical estimate, not investment advice.
+simple perpetuity (benefit ÷ discount rate; default 6%, ~the long bond). This is an analytical estimate, not investment advice.
