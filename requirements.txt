@@ -1,2 +1,2 @@
-streamlit>=1.49
+streamlit>=1.49,<2
 pandas>=2.0

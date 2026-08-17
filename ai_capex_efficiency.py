@@ -1,4 +1,4 @@
-"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and FLOPs 10x.
+"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x22.1 (CEILING).
 
 Layout:
   - Totals      : front page, all-company roll-up (live) + GLOBAL estimate row
@@ -8,11 +8,15 @@ Layout:
   - Inputs      : global assumptions + the reduction engine (Amdahl cost-weighting)
   - Sensitivity : SpaceX value across reduction tiers
   - CostLadder  : own-silicon vs buy-NVIDIA vs rent $/GPU-hr
+  - ServingTraining : the 2026-08-07/08 multi-GPU receipts priced on the ladder
+    ($/1M generated tokens vs context; training GPU-hour ratio; assumptions table)
   - Evidence    : BOM split, accelerator-share data, own-silicon TCO, filing top-lines
   - Methodology : steps, caveats, sources
 
-Engine: a GPU is ~60% memory / ~40% compute by cost. Memory x100 + FLOPs x10 ->
-residual 0.6%+4% -> ~22x cost-weighted reduction, floored by compute. NOT 100x.
+Engine: a GPU is ~60% memory / ~40% compute by cost. TODAY (default): memory x100
++ FLOPs x9.24 (measured blend x2.19 x fit-derived equal-quality parameter ratio
+x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x22.1 (measured prefill x4.02
+x 5.5 kernel-campaign speedup) -> ~41x. Floored by compute. NOT 100x.
 
 Every output is a LIVE FORMULA. Colors: yellow = assumption (a lever; each maps to a
 slider in the Streamlit app), green = disclosed filing/market data, blue = derived.
@@ -111,9 +115,16 @@ def build_inputs(inp):
         ),
         (
             "FLOPs reduction factor",
-            G["flop_factor"],
+            # LIVE: TODAY scenario = the ServingTraining workload blend x the
+            # equal-quality parameter ratio (Inputs rows 23-25). Overtype with
+            # =B25 for CEILING, or any number to pin the lever.
+            "=$B$24",
             "x",
-            "1e-1 FLOPs = 10x fewer.",
+            "TODAY scenario (default) = x9.24: the measured workload blend x2.19 (10:1 input:output, "
+            "64k context; prefill x1.17, decode x2.20 on the memory ceiling; training excluded) x the "
+            "fit-derived equal-quality parameter ratio x4.22 at 1T (rows 23-25 below). Overtype with "
+            "=B25 for the CEILING scenario (x22.1 = measured prefill x4.02 x 5.5 kernel speedup), or "
+            "any number. See ServingTraining for the blend.",
             INPUT_FILL,
         ),
         (
@@ -134,7 +145,7 @@ def build_inputs(inp):
             "Discount rate",
             G["discount_rate"],
             "frac",
-            "Perpetuity capitalization: value = annual benefit / rate (=10x at 10%).",
+            "Perpetuity capitalization: value = annual benefit / rate (=16.7x at 6%).",
             INPUT_FILL,
         ),
         (
@@ -176,7 +187,7 @@ def build_inputs(inp):
             "SpaceX market cap",
             G["spacex_mktcap"],
             "$B",
-            "IPO 2026-06-12 ~$1.77T (market data; used by Sensitivity).",
+            "~$1.84T Aug 2026; IPO 2026-06-12 at ~$1.77T (market data; used by Sensitivity).",
             DATA_FILL,
         ),
         (
@@ -232,6 +243,25 @@ def build_inputs(inp):
         "1 / residual. The realistic $ reduction used everywhere.",
         wrap=True,
     )
+    header(inp, 22, "SCENARIOS (2026-08-17 ruling) — TODAY (default) vs CEILING", span=4)
+    put(inp, 23, 1, "Equal-quality parameter ratio at 1T")
+    put(inp, 23, 2, 4.2185, fmt="0.00", fill=INPUT_FILL, border=True)
+    put(inp, 23, 3, "x")
+    put(inp, 23, 4,
+        "FIT-DERIVED (sealed 2026-08-14 refit): bAttention matches the transformer fit's quality on "
+        "23.7% of the params at 1T -> x4.22 compute per token at equal quality. 84.2% at 1B, 55.2% at "
+        "10B, 36.2% at 100B. A projection of the two fits, not a measurement.", wrap=True)
+    put(inp, 24, 1, "TODAY compute lever = blend x ratio", bold=True)
+    put(inp, 24, 2, "=ServingTraining!$B$28*$B$23", fmt="0.00", fill=CALC_FILL, border=True, bold=True)
+    put(inp, 24, 3, "x")
+    put(inp, 24, 4, "B3 (the FLOPs lever) points here by default.", wrap=True)
+    put(inp, 25, 1, "CEILING compute lever")
+    put(inp, 25, 2, 22.09, fmt="0.00", fill=INPUT_FILL, border=True)
+    put(inp, 25, 3, "x")
+    put(inp, 25, 4,
+        "Measured prefill x4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) x 5.5 kernel-campaign "
+        "speedup. Overtype B3 with =B25 to run the workbook at the ceiling (~41x cost-weighted).",
+        wrap=True)
 
 
 def build_company(ws, name, c25, c26, mcap, ai_rev, basis, sources=()):
@@ -735,17 +765,16 @@ def build_sensitivity(sens):
     header(
         sens,
         1,
-        "SENSITIVITY (SpaceX) — count-based reduction tiers vs cost-weighted",
+        "SENSITIVITY (SpaceX) — TODAY vs CEILING vs live cost-weighted",
         span=5,
     )
     # base = ACCELERATOR capex (matches the SpaceX tab, which reduces only accelerator silicon
     # at the conservative dc_scale=0; NOT total capex, which would overstate the avoided spend)
     SXCAP, SXOPX = "SpaceX!$B$12", "SpaceX!$B$26"
     cols = [
-        ("10x compute-bound", "10"),
-        ("30x balanced", "30"),
-        ("100x memory-bound", "100"),
-        ("Cost-weighted", RED),
+        ("TODAY (~20x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$24)"),
+        ("CEILING (~41x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
+        ("Cost-weighted (live)", RED),
     ]
     put(sens, 2, 1, "Metric", bold=True)
     for j, (name, _) in enumerate(cols):
@@ -993,7 +1022,7 @@ def build_evidence(ev):
         "Cost-weighted reduction vs memory share",
         "reduction (x)",
         "",
-        "live: =1/(w/100+(1-w)/10)",
+        "live: =1/(w/memfac+(1-w)/flopfac)",
         bold=True,
     )
     for k, w in enumerate([0.45, 0.50, 0.60, 0.70, 0.82]):
@@ -1018,11 +1047,11 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. Memory x100 + FLOPs x10 -> residual 0.6%+4% -> ~22x cost-weighted reduction (Inputs B20).",
+            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x22.1 -> ~41x.",
             False,
         ),
         (
-            "  Floored by the least-reduced part (compute, 10x). Neither alone helps (mem-only ~2.5x, FLOP-only ~1.6x).",
+            "  Floored by the least-reduced part (compute). Neither alone helps (mem-only ~2.5x, FLOP-only ~1.5x).",
             False,
         ),
         ("", False),
@@ -1065,7 +1094,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~22x (NOT 100x; range 17-38x over memory share 45-82%).",
+            "- Cost-weighted reduction ~20x TODAY, ~41x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
             False,
         ),
         (
@@ -1077,11 +1106,11 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Spend-cut value (named floor): FY25 ~$159B/yr (~$1.6T capitalized); FY26 r/r ~$328B/yr (~$3.3T).",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$337B/yr (~$5.6T). Ceiling: ~$163B FY25.",
             False,
         ),
         (
-            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$2.0T, FY26 ~$4.1T capitalized. Clearly an estimate.",
+            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.3T, FY26 ~$7.0T capitalized. Clearly an estimate.",
             False,
         ),
         ("", False),
@@ -1111,7 +1140,7 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- 1000x (=100x*10x) is NOT physical: cost is additive (Amdahl), not multiplicative.",
+            "- Multiplying the levers (100x * 9.2x ~ 900x) is NOT physical: cost is additive (Amdahl), not multiplicative.",
             False,
         ),
         (
@@ -1169,6 +1198,264 @@ def build_methodology(meth):
         put(meth, i, 1, t, bold=b, wrap=True)
 
 
+def build_serving_training(ws):
+    """The 2026-08-07/08 multi-GPU receipts, priced on the CostLadder rates.
+    Values are computed live from ai_capex_model (MEASURED / serving_economics /
+    training_throughput_ratio); every measured cell names its derived.json key
+    in ai_capex_model.MEASURED. Green = measured, yellow = assumption/projection,
+    blue = derived."""
+    from ai_capex_model import (MEASURED, SERVING, SERVING_TRAINING_ASSUMPTIONS,
+                                PREFILL_BF16_D2048_SWEEP, PREFILL_FP32_D2048_SWEEP,
+                                PREFILL_TOKENS_PER_S_D2048, KV_MB_PER_TOKEN_PER_STREAM,
+                                TRAIN_ADVANTAGE_SHORT_SEQ,
+                                serving_cost_curve, serving_economics,
+                                training_throughput_ratio)
+
+    widths(ws, {"A": 44, "B": 42, "C": 30, "D": 14, "E": 12, "F": 60})
+    header(ws, 1,
+           "SERVING & TRAINING — measured 2026-08-07/08 (2/4/8 x H100), priced at the CostLadder rent mid "
+           f"(${SERVING['gpu_hr']:.2f}/GPU-hr). Source: bdm/docs/deck/build/derived.json (keys in ai_capex_model.MEASURED).")
+    # --- LIVE workload block ------------------------------------------------
+    # Fixed rows on purpose: Inputs!B3 (flop_factor) is a formula pointing at
+    # B28 below, so editing B7/B8/B9 recomputes the ENTIRE workbook the same way
+    # the sidebar does in the Streamlit app.
+    header(ws, 4, "WORKLOAD — edit the yellow cells; every sheet recomputes")
+    put(ws, 5, 1,
+        "Training, prefill and decode point in opposite directions at today's kernel maturity, so the "
+        "compute lever is blended over the workload rather than fixed. Cost per GENERATED token = "
+        "in:out input tokens through prefill + one token through decode. Transformer decode follows "
+        "the MEASURED 1/context law at its own KV ceiling (granted no KV compression by default; "
+        "raise the KV-compression cell below to grant it a mature stack).",
+        wrap=True)
+    put(ws, 7, 1, "Input : output token ratio")
+    put(ws, 7, 2, 10.0, "0.0", fill=INPUT_FILL, border=True)
+    put(ws, 7, 6, "~10:1 = code / reasoning / agent traces. 50-100:1 = RAG and document QA.", wrap=True)
+    put(ws, 8, 1, "E[context] (tokens)")
+    put(ws, 8, 2, 65536, "#,##0", fill=INPUT_FILL, border=True)
+    put(ws, 8, 6, "Our decode cost is context-flat and the transformer's is linear, so the decode advantage is linear in this.", wrap=True)
+    put(ws, 9, 1, "Training share of accelerator cost")
+    put(ws, 9, 2, 0.0, "0.00", fill=INPUT_FILL, border=True)
+    put(ws, 9, 6, "0 = a serving-cost claim. Training is a LOSS at short sequence today; above ~0.06 the blend drops below 1.", wrap=True)
+
+    put(ws, 11, 1, "Measured constants", bold=True)
+    put(ws, 12, 1, "Owned decode, tokens/s/box (context-flat)")
+    put(ws, 12, 2, MEASURED["serve_tokens_per_s_box"], "#,##0", fill=DATA_FILL, border=True)
+    put(ws, 13, 1, "KV MB per token per stream")
+    put(ws, 13, 2, KV_MB_PER_TOKEN_PER_STREAM, "0.000000", fill=DATA_FILL, border=True)
+    put(ws, 14, 1, "HBM TB/s per GPU")
+    put(ws, 14, 2, SERVING["hbm_tbps"], "0.00", fill=INPUT_FILL, border=True)
+    put(ws, 15, 1, "Transformer KV compression (mature stack)")
+    put(ws, 15, 2, SERVING["tf_kv_compression"], "0.0", fill=INPUT_FILL, border=True)
+    put(ws, 16, 1, "GPUs per box")
+    put(ws, 16, 2, SERVING["gpus_per_box"], "0", fill=INPUT_FILL, border=True)
+    put(ws, 17, 1, "Training advantage, short sequence (owned / transformer)")
+    put(ws, 17, 2, TRAIN_ADVANTAGE_SHORT_SEQ, "0.000", fill=DATA_FILL, border=True)
+    put(ws, 17, 6, "Transformer is 9.6x faster at T=2048 blocks (d1152). Crossover near T~88,000.", wrap=True)
+
+    put(ws, 19, 1, "Derived", bold=True)
+    put(ws, 20, 1, "KV GB per stream")
+    put(ws, 20, 2, "=$B$8*$B$13/1024", "0.00", fill=CALC_FILL, border=True)
+    put(ws, 21, 1, "KV GB per stream, compressed")
+    put(ws, 21, 2, "=$B$20/$B$15", "0.000", fill=CALC_FILL, border=True)
+    put(ws, 22, 1, "Transformer decode, tokens/s/box")
+    put(ws, 22, 2, "=511.8416*32768/$B$8*$B$15*$B$16", "#,##0", fill=CALC_FILL, border=True)
+    put(ws, 22, 6,
+        "MEASURED 1/context law (2026-08-14 re-base): 511.84 tok/s/GPU at 32,768 ctx x 32768/E[context] "
+        "x KV-compression x GPUs. Crosses our flat 562/GPU near ~30k context.", wrap=True)
+    # Log-log interpolation over the measured prefill table at rows 33..39.
+    put(ws, 23, 1, "Prefill table row (lookup)")
+    put(ws, 23, 2, "=MATCH($B$8,$A$33:$A$39,1)", "0", fill=CALC_FILL, border=True)
+    _interp = (
+        "=IF(INDEX({col}$33:{col}$39,MIN($B$23+1,7))=INDEX({col}$33:{col}$39,$B$23),"
+        "INDEX({col}$33:{col}$39,$B$23),"
+        "EXP(LN(INDEX({col}$33:{col}$39,$B$23))"
+        "+(LN($B$8)-LN(INDEX($A$33:$A$39,$B$23)))"
+        "/(LN(INDEX($A$33:$A$39,MIN($B$23+1,7)))-LN(INDEX($A$33:$A$39,$B$23)))"
+        "*(LN(INDEX({col}$33:{col}$39,MIN($B$23+1,7)))-LN(INDEX({col}$33:{col}$39,$B$23)))))*$B$16"
+    )
+    put(ws, 24, 1, "Prefill tokens/s/box — transformer")
+    put(ws, 24, 2, _interp.format(col="$B"), "#,##0", fill=CALC_FILL, border=True)
+    put(ws, 25, 1, "Prefill tokens/s/box — owned")
+    put(ws, 25, 2, _interp.format(col="$C"), "#,##0", fill=CALC_FILL, border=True)
+    put(ws, 26, 1, "Transformer seconds per generated token")
+    put(ws, 26, 2, "=$B$7/$B$24+1/$B$22", "0.000000", fill=CALC_FILL, border=True)
+    put(ws, 27, 1, "Owned seconds per generated token")
+    put(ws, 27, 2, "=$B$7/$B$25+1/$B$12", "0.000000", fill=CALC_FILL, border=True)
+    put(ws, 28, 1, "BLENDED COMPUTE LEVER (flop_factor)", bold=True)
+    put(ws, 28, 2,
+        "=IF($B$9>0,1/($B$9/$B$17+(1-$B$9)/($B$26/$B$27)),$B$26/$B$27)",
+        "0.00", fill=CALC_FILL, border=True, bold=True)
+    put(ws, 28, 6, "Inputs!B24 (TODAY lever) = this x the equal-quality parameter ratio; Inputs!B3 follows it, so this drives the whole workbook.", wrap=True)
+    put(ws, 29, 1, "  of which: prefill advantage")
+    put(ws, 29, 2, "=($B$7/$B$24)/($B$7/$B$25)", "0.00", fill=CALC_FILL, border=True)
+    put(ws, 30, 1, "  of which: decode advantage")
+    put(ws, 30, 2, "=(1/$B$22)/(1/$B$12)", "0.0", fill=CALC_FILL, border=True)
+
+    put(ws, 32, 1, "Measured prefill throughput, tokens/s/GPU (bf16 saturated lane, d2048)", bold=True)
+    for c, t in enumerate(["Context", "Transformer", "Owned"], start=1):
+        put(ws, 32, c + 3, t, bold=True, fill=SUB_FILL, border=True)
+    for i, ctx in enumerate(sorted(PREFILL_TOKENS_PER_S_D2048)):
+        tf_tps, own_tps = PREFILL_TOKENS_PER_S_D2048[ctx]
+        put(ws, 33 + i, 1, ctx, "#,##0", border=True)
+        put(ws, 33 + i, 2, tf_tps, "#,##0", fill=DATA_FILL, border=True)
+        put(ws, 33 + i, 3, own_tps, "#,##0", fill=DATA_FILL, border=True)
+
+    put(ws, 41, 1,
+        "SCOPE: the serving and training blocks below are component-scope systems benches (bAttention "
+        "d1536 fwd+bwd h-recurrence sub-block vs transformer d2048 forward-only layer); every speedup "
+        "there is each family vs its OWN 1-GPU baseline. The prefill lanes quoted further down are "
+        "cross-family: bf16 parameter-matched at block scope, and fp32 at full-model scope.",
+        wrap=True)
+
+    header(ws, 43, "Serving at long context — $/1M generated tokens, one 8xH100 box")
+    for c, t in enumerate(["Context (tokens)", "bAttention $/1M tok", "Transformer $/1M tok (mature stack)",
+                           "TF streams/GPU", "Cost ratio", "Note"], start=1):
+        put(ws, 44, c, t, bold=True, fill=SUB_FILL, border=True)
+    r = 45
+    for row in serving_cost_curve():
+        note = ("bAttention rate extrapolated past 262k (flatness measured 4k-262k)"
+                if row["battn_extrapolated"] else
+                ("a measured decode cell (64 streams/GPU against the transformer 1)" if row["ctx"] == 262144 else ""))
+        put(ws, r, 1, row["ctx"], "#,##0", border=True)
+        put(ws, r, 2, row["battn_usd_per_mtok"], "$0.0000",
+            fill=INPUT_FILL if row["battn_extrapolated"] else DATA_FILL, border=True)
+        put(ws, r, 3, row["tf_usd_per_mtok"], "$0.00", fill=CALC_FILL, border=True)
+        put(ws, r, 4, row["tf_streams_per_gpu"], "0", fill=CALC_FILL, border=True)
+        put(ws, r, 5, row["cost_ratio"], "0.0×", fill=CALC_FILL, border=True)
+        put(ws, r, 6, note, wrap=True, border=True)
+        r += 1
+    put(ws, r, 1,
+        "RE-BASED 2026-08-14 on the full-model decode receipt: per-GPU aggregate throughput at each family's "
+        "own concurrency ceiling, transformer granted no KV compression. Ratio ~ context/29,800, so the "
+        "TRANSFORMER is ahead below ~30k context; x2.2 at 64k, x8.8 at 262k. Memory-ceiling result, not a "
+        "per-token one - at one stream and 64k the transformer decodes a token faster than we do. Granting it "
+        f"KV /8: x{serving_economics(262144, s={'tf_kv_compression': 8.0})['cost_ratio']:.1f} at 262k.", wrap=True)
+    r += 2
+
+    header(ws, r, "Training at scale — same cluster, more steps/s")
+    r += 1
+    train_rows = [
+        ("8-GPU speedup, matched load (16 in flight)", "x5.15 fwd+bwd vs x3.70 fwd-only Ulysses best",
+         f"x{training_throughput_ratio():.2f} cluster throughput", DATA_FILL, "MEASURED — matched_load_curve"),
+        ("8-GPU speedup, deep load (256 in flight)", "x6.27 (pipeline keeps filling; TF saturated by 16)",
+         f"x{training_throughput_ratio(deep=True):.2f}", DATA_FILL, "MEASURED — scaling_1to8_best"),
+        ("GPU-hours for the same training work", "-28% (matched) … -41% (deep)", "", CALC_FILL, "derived"),
+        ("64k-token sequence on one 80 GB GPU", "30.9 GB fits vs OOM (78.4 GB attempted)", "", DATA_FILL,
+         "MEASURED — pipeline_feasibility"),
+        ("Pipeline per-GPU peak (flat in load)", "9.05 GB vs 43.3 GB GPipe stage", "x4.8 (component-scope, width-unmatched)",
+         DATA_FILL, "MEASURED — pipeline_memory_asymmetry"),
+        ("Params for equal quality at 70B", f"x{MEASURED['parity_70B_param_multiple']:.1f} [2.2-7.7] transformer",
+         "", INPUT_FILL, "PROJECTION — quality_fit.ref_70B"),
+        ("Tokens for equal quality at 70B", f"x{MEASURED['parity_70B_token_multiple']:.2f} [1.33-2.10] (beta=0.28 assumption)",
+         "", INPUT_FILL, "PROJECTION — quality_fit.ref_70B"),
+        ("Stepped vs scanned training", f"x{MEASURED['stepped_vs_scanned']:.0f} cost to step the recurrence token-by-token",
+         "", DATA_FILL, "MEASURED — stepped_vs_scanned"),
+    ]
+    for c, t in enumerate(["Metric", "Value", "Ratio / consequence", "", "", "Status — derived.json key"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    for name, val, ratio, fill, status in train_rows:
+        put(ws, r, 1, name, border=True)
+        put(ws, r, 2, val, fill=fill, border=True, wrap=True)
+        put(ws, r, 3, ratio, fill=CALC_FILL if ratio else None, border=True)
+        put(ws, r, 6, status, border=True, wrap=True)
+        r += 1
+    r += 1
+
+    header(ws, r, "The compute lever — blended over the workload (sets flop_factor)")
+    r += 1
+    put(ws, r, 1,
+        "Training, prefill and decode point in OPPOSITE directions at today's kernel maturity, so a "
+        "single number cannot represent them. Training is a loss at short sequence (transformer "
+        "5.3-9.6x faster at T=2048 blocks; FLOPs near-matched at 1.07-1.19x, the gap is achieved "
+        "FLOP/s 200.9 vs 21.7 TF/s; crossover near T~88,000). Prefill crosses over near 65k context. "
+        "Decode crosses in our favour near ~30k context. The lever is therefore blended over the workload: per "
+        "generated token, in:out input tokens through prefill plus one token through decode, using "
+        "measured per-GPU throughput at each family's own concurrency ceiling, the transformer granted "
+        "no KV compression. At the default operating point (10:1, 64k context, training share 0): "
+        "prefill x1.17, decode x2.20, blended x2.19, with decode ~99.7% of transformer serving cost. "
+        "The decode half is a MEMORY CEILING, not a per-token result - at one stream and 64k the "
+        "transformer decodes a token more cheaply than we do - and it crosses 1 at ~30k context, below "
+        "which the transformer wins. Granting it KV/8 divides our decode lever by 8. A training share "
+        "above ~0.06 also takes the blend below 1. All are reachable in the live model.",
+        wrap=True)
+    r += 2
+    put(ws, r, 1,
+        "The prefill component itself exists in two lanes, both shown below. It comes from the bf16 lane, where "
+        "both families run their production attention kernels (there is no fp32 FlashAttention kernel). "
+        "BF16 LANE: parameter counts exactly matched, 1 layer, batch 16, 1 x H100 80GB HBM3, 2026-07-21 — "
+        "x4.02 at d512/1M, x3.83 at d1024/1M, x2.01 at d2048/262k. Receipts: "
+        "experiments/paper_figures/output/matched_d{512,1024,2048}_h100.json",
+        wrap=True)
+    r += 2
+    for c, t in enumerate(["Context (tokens)", "Transformer ms", "bAttention ms", "TF / bAttention", "", "Lane / note"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    for label, sweep, fill in (("bf16 (lever)", PREFILL_BF16_D2048_SWEEP, DATA_FILL),
+                               ("fp32 (full model)", PREFILL_FP32_D2048_SWEEP, INPUT_FILL)):
+        for T_tok, tf_ms, ba_ms in sweep:
+            ratio = tf_ms / ba_ms
+            note = label + (" — transformer ahead" if ratio < 1.0 else "")
+            put(ws, r, 1, T_tok, "#,##0", border=True)
+            put(ws, r, 2, tf_ms, "#,##0.0", fill=CALC_FILL, border=True)
+            put(ws, r, 3, ba_ms, "#,##0.0", fill=fill, border=True)
+            put(ws, r, 4, ratio, "0.00×", fill=CALC_FILL, border=True)
+            put(ws, r, 6, note, wrap=True, border=True)
+            r += 1
+    put(ws, r, 1,
+        "Both blocks are d2048, so the lanes are directly comparable: 2.01x in bf16 against 7.91x in fp32 "
+        "at 262k. The fp32 lane is full-model scope (24 layers, batch 1) and its receipt records "
+        "FLASH_ATTENTION and CUDNN_ATTENTION as 'rejected: No available kernel', with the owned arm's "
+        "route attestation reading dtype_mix io=fp32,bf_col=fp16; its params differ by 16.7%. Full model "
+        "in bf16 has not been run. Receipt: "
+        "experiments/paper_figures/output/deck_speed_scaling_d2048_h100_20260803.json", wrap=True)
+    r += 2
+
+    header(ws, r, "16-bit IO in training")
+    r += 1
+    put(ws, r, 1,
+        "A training step-time gate: same architecture on every row, only the IO dtype varies. "
+        "d1536 / 27 layers / block 2048 / batch 32 / seed 1, 1 x GH200 480GB, GPU verified idle before "
+        "each arm, steady state only. 0 skipped steps on all arms; verdict PASS_io16_SHIPS. Throughput "
+        "and memory rows are d1536/L27; the val deltas come from the gate's smaller vehicle (width 512, "
+        "15 layers). This is why the production training lane is 16-bit; it is not an input to the "
+        "compute lever above. Receipt: experiments/paper_figures/output/receipts/io16_gate_20260809.md",
+        wrap=True)
+    r += 2
+    for c, t in enumerate(["IO dtype", "s/step", "Speed vs fp32", "Peak allocated (GB)", "Memory vs fp32", "Val cost @601 steps"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    io_rows = [
+        ("fp32", MEASURED["io16_fp32_s_per_step"], 1.0,
+         MEASURED["io16_fp32_peak_mb"] / 1024, 1.0, "baseline"),
+        ("fp16", MEASURED["io16_fp16_s_per_step"], MEASURED["io16_fp16_speedup"],
+         MEASURED["io16_fp16_peak_mb"] / 1024, MEASURED["io16_fp16_mem_ratio"], "+0.00128"),
+        ("bf16", MEASURED["io16_bf16_s_per_step"], MEASURED["io16_bf16_speedup"],
+         MEASURED["io16_bf16_peak_mb"] / 1024, MEASURED["io16_bf16_mem_ratio"], "+0.00391"),
+    ]
+    for name, sps, spd, gb, memr, val in io_rows:
+        put(ws, r, 1, name, border=True)
+        put(ws, r, 2, sps, "0.000", fill=DATA_FILL, border=True)
+        put(ws, r, 3, spd, "0.000×", fill=CALC_FILL, border=True)
+        put(ws, r, 4, gb, "0.0", fill=DATA_FILL, border=True)
+        put(ws, r, 5, memr, "0.000×", fill=CALC_FILL, border=True)
+        put(ws, r, 6, val, border=True)
+        r += 1
+    r += 1
+
+    header(ws, r, "Assumptions — one row each (MEASURED / PROJECTION / ASSUMPTION)")
+    r += 1
+    for c, t in enumerate(["Assumption", "Value", "", "", "Status", "Source"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    for a, b, st_, src in SERVING_TRAINING_ASSUMPTIONS:
+        put(ws, r, 1, a, border=True)
+        put(ws, r, 2, b, wrap=True, border=True)
+        put(ws, r, 5, st_, fill=DATA_FILL if st_ == "MEASURED" else INPUT_FILL, border=True)
+        put(ws, r, 6, src, wrap=True, border=True)
+        r += 1
+
+
 def main() -> None:
     wb = Workbook()
     tot = wb.active
@@ -1179,6 +1466,7 @@ def main() -> None:
     inp = wb.create_sheet("Inputs")
     sens = wb.create_sheet("Sensitivity")
     ladder = wb.create_sheet("CostLadder")
+    servtrain = wb.create_sheet("ServingTraining")
     ev = wb.create_sheet("Evidence")
     meth = wb.create_sheet("Methodology")
 
@@ -1197,6 +1485,7 @@ def main() -> None:
     build_totals(tot, tabs)
     build_sensitivity(sens)
     build_ladder(ladder)
+    build_serving_training(servtrain)
     build_evidence(ev)
     build_methodology(meth)
 
