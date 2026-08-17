@@ -73,7 +73,7 @@ GLOBALS = {
     "elec_rate": 0.08,  # $/kWh
     "cooling_overhead": 0.25,  # non-power running cost as fraction of electricity
     "fleet_life_yr": 4,  # AI-GPU depreciation life
-    "spacex_mktcap": 1840,  # $B — SPCX ~$1.84T Aug 2026 (IPO 2026-06-12 at ~$1.77T)
+    "spacex_mktcap": 1950,  # $B — SPCX ~$1.95T 2026-08-17 (IPO 2026-06-12 at ~$1.77T)
     "dc_scale": 0.0,  # datacenter scaling factor: 0=accel-only, 1=whole DC scales
     "named_share_of_global": 0.80,  # ESTIMATE: named firms' share of GLOBAL AI capex
 }
@@ -214,12 +214,13 @@ COMPANIES = [
     {
         "name": "SpaceX",
         "fy25": (12.7, 1.00, 0.79, 1.00),
-        "fy26": (18, 1.00, 0.79, 1.00),
-        "mcap": 1840,
+        "fy26": (55, 1.00, 0.79, 1.00),
+        "mcap": 1950,
         "ai_rev": (0.3, 1),
-        "basis": "FY25 S-1 AI capex $12.7B [DISCLOSED]; FY26 ~$18B (ESTIMATE, likely conservative -- Q1'26 "
-        "AI capex alone was $7.7B, ~$31B annualized). ~all accelerator (greenfield). "
-        "AI rev ~0 (nascent; Anthropic orbital compute is future).",
+        "basis": "FY25 S-1 AI capex $12.7B [DISCLOSED]; FY26 ~$55B EST from H1'26 DISCLOSED $23.5B "
+        "(Q1 $7.7B, Q2 $15.8B; 82.7% of total capex) + company guiding capex roughly flat Q3/Q4. "
+        "~all accelerator (greenfield COLOSSUS I/II). AI rev ~0 today; Anthropic (up to $1.25B/mo) "
+        "and Google (up to $920M/mo) compute deals ramp from 2027.",
         "sources": [
             (
                 "S-1 registration statement (SEC EDGAR)",
