@@ -1,4 +1,4 @@
-"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x22.1 (CEILING).
+"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x24.8 (CEILING).
 
 Layout:
   - Totals      : front page, all-company roll-up (live) + GLOBAL estimate row
@@ -15,8 +15,11 @@ Layout:
 
 Engine: a GPU is ~60% memory / ~40% compute by cost. TODAY (default): memory x100
 + FLOPs x9.24 (measured blend x2.19 x fit-derived equal-quality parameter ratio
-x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x22.1 (measured prefill x4.02
-x 5.5 kernel-campaign speedup) -> ~41x. Floored by compute. NOT 100x.
+x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x24.8 (measured prefill x4.02
+x 6.17 campaign speedup) -> ~45x. Floored by compute. NOT 100x. RE-BASED 2026-08-24,
+AGAIN 2026-08-25: that x6.17 was a flat x5.5 assumption; it is now x3.452 MEASURED
+(banked by the megakernel campaign; 2k ledger-of-record receipt 2026-08-25) x
+x1.786 TARGET (the funded 8k-win gate).
 
 Every output is a LIVE FORMULA. Colors: yellow = assumption (a lever; each maps to a
 slider in the Streamlit app), green = disclosed filing/market data, blue = derived.
@@ -26,7 +29,16 @@ Run:  uv run --with openpyxl python ai_capex_efficiency.py
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-from ai_capex_model import GLOBALS, COMPANIES  # single source of truth for defaults
+from ai_capex_model import (  # single source of truth for defaults
+    GLOBALS, COMPANIES,
+    CEILING_FLOP_LEVER, CEILING_PREFILL_SPEEDUP,
+    KERNEL_CAMPAIGN_20260824,
+    KERNEL_SPEEDUP_REALIZED_20260824, KERNEL_SPEEDUP_REMAINING_TARGET,
+    param_matching_gain, training_cost_saving,
+    training_step_ratio, training_context_crossover, training_advantage_mix,
+    training_helps_headline_threshold, headline_with_training,
+    TRAINING_CURRICULA, KV_MB_PER_TOKEN_PER_STREAM,
+)
 
 INPUT_FILL = PatternFill(
     "solid", fgColor="FFF2CC"
@@ -123,7 +135,7 @@ def build_inputs(inp):
             "TODAY scenario (default) = x9.24: the measured workload blend x2.19 (10:1 input:output, "
             "64k context; prefill x1.17, decode x2.20 on the memory ceiling; training excluded) x the "
             "fit-derived equal-quality parameter ratio x4.22 at 1T (rows 23-25 below). Overtype with "
-            "=B25 for the CEILING scenario (x22.1 = measured prefill x4.02 x 5.5 kernel speedup), or "
+            "=B25 for the CEILING scenario (x24.8 = measured prefill x4.02 x 6.17 campaign speedup), or "
             "any number. See ServingTraining for the blend.",
             INPUT_FILL,
         ),
@@ -256,11 +268,14 @@ def build_inputs(inp):
     put(inp, 24, 3, "x")
     put(inp, 24, 4, "B3 (the FLOPs lever) points here by default.", wrap=True)
     put(inp, 25, 1, "CEILING compute lever")
-    put(inp, 25, 2, 22.09, fmt="0.00", fill=INPUT_FILL, border=True)
+    put(inp, 25, 2, CEILING_FLOP_LEVER, fmt="0.00", fill=INPUT_FILL, border=True)
     put(inp, 25, 3, "x")
     put(inp, 25, 4,
-        "Measured prefill x4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) x 5.5 kernel-campaign "
-        "speedup. Overtype B3 with =B25 to run the workbook at the ceiling (~41x cost-weighted).",
+        f"Measured prefill x4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) x {CEILING_PREFILL_SPEEDUP:.2f} "
+        f"campaign speedup. RE-BASED 2026-08-24, AGAIN 2026-08-25: that factor is x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED "
+        f"(already banked: our own step went 400.4 -> 116.0 ms at B16/T2048; 2026-08-25 ledger-of-record 2k receipt) x "
+        f"x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded 8k-win gate, no receipt yet); it was a flat "
+        f"x5.5 assumption before. Overtype B3 with =B25 to run the workbook at the ceiling (~45x cost-weighted).",
         wrap=True)
 
 
@@ -773,7 +788,7 @@ def build_sensitivity(sens):
     SXCAP, SXOPX = "SpaceX!$B$12", "SpaceX!$B$26"
     cols = [
         ("TODAY (~20x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$24)"),
-        ("CEILING (~41x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
+        ("CEILING (~45x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
         ("Cost-weighted (live)", RED),
     ]
     put(sens, 2, 1, "Metric", bold=True)
@@ -1047,7 +1062,7 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x22.1 -> ~41x.",
+            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x24.8 -> ~45x (re-based 2026-08-24/25: x3.452 measured x x1.786 target, was a flat x5.5 assumption).",
             False,
         ),
         (
@@ -1094,7 +1109,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~20x TODAY, ~41x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
+            "- Cost-weighted reduction ~20x TODAY, ~45x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
             False,
         ),
         (
@@ -1250,7 +1265,21 @@ def build_serving_training(ws):
     put(ws, 16, 2, SERVING["gpus_per_box"], "0", fill=INPUT_FILL, border=True)
     put(ws, 17, 1, "Training advantage, short sequence (owned / transformer)")
     put(ws, 17, 2, TRAIN_ADVANTAGE_SHORT_SEQ, "0.000", fill=DATA_FILL, border=True)
-    put(ws, 17, 6, "Transformer is 9.6x faster at T=2048 blocks (d1152). Crossover near T~88,000.", wrap=True)
+    put(ws, 17, 6,
+        f"RE-BASED 2026-08-24/25 (1 x GH200, ONE layer, fwd+bwd, bf16, checkpointing off both arms, modern "
+        f"transformer block 24Q/4KV head_dim 256 RoPE 64 gated): transformer is "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}x faster at T=2,048 "
+        f"({KERNEL_CAMPAIGN_20260824['battn_ms_2k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_2k']:.1f} ms/step) and "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f}x at T=8,192; the equal-token B4/T32,768 ~parity cell is "
+        f"RETIRED 2026-08-25 as a B4 occupancy artifact, and the flat per-token model puts the crossover at a "
+        f"PROJECTED T~{training_context_crossover():,.0f} (from T~88,000 pre-campaign). It read "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_2k_precampaign']:.2f}x "
+        f"({KERNEL_CAMPAIGN_20260824['battn_ms_2k_precampaign']:.1f} ms) the same morning. Training PEAK MEMORY, same "
+        f"frame: {KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f}x at T=2,048 "
+        f"({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB), "
+        f"from {KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f}x -- that is TRAINING memory, not the /100 "
+        f"SERVING lever. TARGET (no receipt): T=8,192 step <= {KERNEL_CAMPAIGN_20260824['target_8k_win_gate_ms']:.2f} ms "
+        f"and memory {KERNEL_CAMPAIGN_20260824['target_mem_ratio']:.2f}x.", wrap=True)
 
     put(ws, 19, 1, "Derived", bold=True)
     put(ws, 20, 1, "KV GB per stream")
@@ -1366,9 +1395,11 @@ def build_serving_training(ws):
     r += 1
     put(ws, r, 1,
         "Training, prefill and decode point in OPPOSITE directions at today's kernel maturity, so a "
-        "single number cannot represent them. Training is a loss at short sequence (transformer "
-        "5.3-9.6x faster at T=2048 blocks; FLOPs near-matched at 1.07-1.19x, the gap is achieved "
-        "FLOP/s 200.9 vs 21.7 TF/s; crossover near T~88,000). Prefill crosses over near 65k context. "
+        "single number cannot represent them. Training is still a loss at short sequence, but a much "
+        f"smaller one since the 2026-08-24 kernel re-base (transformer "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}x faster at T=2,048 and "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f}x at T=8,192, crossover near T~32,000; it was "
+        "5.3-9.6x with a crossover near T~88,000 on the pre-campaign d1152 sweep). Prefill crosses over near 65k context. "
         "Decode crosses in our favour near ~30k context. The lever is therefore blended over the workload: per "
         "generated token, in:out input tokens through prefill plus one token through decode, using "
         "measured per-GPU throughput at each family's own concurrency ceiling, the transformer granted "
@@ -1377,9 +1408,98 @@ def build_serving_training(ws):
         "The decode half is a MEMORY CEILING, not a per-token result - at one stream and 64k the "
         "transformer decodes a token more cheaply than we do - and it crosses 1 at ~30k context, below "
         "which the transformer wins. Granting it KV/8 divides our decode lever by 8. A training share "
-        "above ~0.06 also takes the blend below 1. All are reachable in the live model.",
+        "above ~0.30 also takes the blend below 1 (it was ~0.06 before the kernel re-base). "
+        "All are reachable in the live model.",
         wrap=True)
     r += 2
+
+    # --- estimated TRAINING cost at equal quality (mirrors the app's block)
+    header(ws, r, "Estimated TRAINING cost at equal quality (ESTIMATE: measured kernels x fitted quality)")
+    r += 1
+    put(ws, r, 1,
+        "Training compute ~ 6*N*D FLOPs. At equal quality we need N/s parameters, where s(N) is the "
+        "FIT-DERIVED equal-quality parameter ratio (the same sealed 2026-08-14 refit as the compute "
+        "lever). Two token regimes differ by exactly one power of s: COMPUTE-OPTIMAL (Chinchilla, D "
+        "proportional to N -> cost ratio s^2/r) and FIXED TOKEN BUDGET (D equal on both arms -> s/r). "
+        f"r(T) is the step-time ratio at matched parameters: MEASURED at T=2,048 ({KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}x, 2026-08-25) "
+        f"and T=8,192 ({KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f}x, 2026-08-24), MODELED beyond. Above 1.00 "
+        "we are cheaper to train to the same quality. The 256k column is MODELED from the per-token cost "
+        "form -- the transformer pays base + attn*T per token (FlashAttention is linear per token), our "
+        "O(1) recurrent state pays ~flat -- with base and attn fitted to the 2k and 8k cells ONLY. The fit "
+        f"is flat -- the +5.8%-per-4x residual and the B4/T32,768 ~parity cell that shared it are RETIRED 2026-08-25 as a "
+        f"B4 occupancy artifact -- and puts the crossover at a PROJECTED T~{training_context_crossover():,.0f}. The old constant-decay "
+        f"extrapolation ({KERNEL_CAMPAIGN_20260824['ratio_decay_per_4x']:.3f} per 4x) is kept as the CONSERVATIVE bound and reads "
+        f"{training_step_ratio(262144, mode='constant_decay'):.2f} at 256k against this form's {training_step_ratio(262144):.2f}. The fits cross at 392M, so below that we need "
+        "MORE parameters, and every row past ~1B extrapolates beyond the measured 47M-663M rungs. Peak "
+        f"training memory ({KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.2f}x measured, {KERNEL_CAMPAIGN_20260824['target_mem_ratio']:.2f}x targeted) is NOT in "
+        "this model: it caps per-GPU batch density, not FLOPs. Chart: "
+        "paper/figures/vc_memo_training_cost_scaling.png",
+        wrap=True)
+    r += 2
+    for c, t in enumerate(["Transformer params", "s(N) fit", "Chinchilla 2k", "Chinchilla 8k",
+                           "Chinchilla 32k", "Chinchilla 256k*", "Fixed-D 2k / 8k / 32k / 256k*"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    for n_tf in (1e9, 1e10, 1e11, 1e12, 1e13):
+        label = f"{n_tf / 1e9:,.0f}B" if n_tf < 1e12 else f"{n_tf / 1e12:,.0f}T"
+        put(ws, r, 1, label, border=True)
+        put(ws, r, 2, param_matching_gain(n_tf), "0.00", fill=INPUT_FILL, border=True)
+        for c, ctx in enumerate((2048, 8192, 32768, 262144), start=3):
+            put(ws, r, c, training_cost_saving(n_tf, ctx, chinchilla=True), "0.00",
+                fill=CALC_FILL, border=True)
+        put(ws, r, 7, " / ".join(
+            f"{training_cost_saving(n_tf, ctx, chinchilla=False):.2f}"
+            for ctx in (2048, 8192, 32768, 262144)), fill=CALC_FILL, border=True)
+        r += 1
+    r += 1
+
+    put(ws, r, 1,
+        "TRAINING IS A CURRICULUM, NOT ONE CONTEXT. Quoting r at a single T assumes ALL training happens "
+        "there; this model used to assume T=2,048 for all of it, which is the pessimistic corner. The "
+        "correct training term is the ratio of COSTS integrated over the mix of contexts a run actually "
+        "uses, NOT the average of the per-context ratios. That distinction does the work: our per-token "
+        "cost is flat in context and the transformer's grows, so long-context tokens dominate its bill "
+        "while staying a token minority. TOKEN SHARES BELOW ARE ILLUSTRATIVE KNOBS -- this repo carries no "
+        "citation for any lab's training recipe and none is invented here; only the first row (the "
+        "degenerate one-context case) is anchored to a measurement. Effective r crosses below 1 at every "
+        f"modern mix, but RAISING the dollar headline is a higher bar: the blended lever is a cost-weighted "
+        f"harmonic mean, so training only pushes the headline up once it beats the SERVING advantage of "
+        f"{training_helps_headline_threshold():.2f}x, not merely 1.00x. Between the two it is profitable and still dilutive.",
+        wrap=True)
+    r += 2
+    for c, t in enumerate(["Training curriculum", "Advantage (TF / ours)", "Effective r",
+                           "Mix: token share -> transformer cost share", "FY25 cut @ 20% training",
+                           "vs serving-only", "Status"], start=1):
+        put(ws, r, c, t, bold=True, fill=SUB_FILL, border=True)
+    r += 1
+    for key, spec in TRAINING_CURRICULA.items():
+        a = training_advantage_mix(key)
+        h = headline_with_training(key, 0.20)
+        put(ws, r, 1, spec["label"], border=True)
+        put(ws, r, 2, a["advantage"], "0.00×", fill=CALC_FILL, border=True)
+        put(ws, r, 3, a["effective_step_ratio"], "0.000×", fill=CALC_FILL, border=True)
+        put(ws, r, 4, "  ".join(
+            f"{g['ctx'] // 1024}k: {g['token_share']:.0%} tok -> {g['tf_cost_share']:.0%} cost"
+            for g in a["rungs"]), wrap=True, border=True)
+        put(ws, r, 5, h["fy25_spend_cut"], "$#,##0.0", fill=CALC_FILL, border=True)
+        put(ws, r, 6, h["delta_vs_serving_only"], "+$#,##0.00;-$#,##0.00", fill=CALC_FILL, border=True)
+        put(ws, r, 7, spec["status"], fill=DATA_FILL if "MEASURED" in spec["status"] else INPUT_FILL,
+            border=True)
+        r += 1
+    r += 1
+
+    put(ws, r, 1,
+        "EXCLUDED, AND IT RUNS OUR WAY. At 262k+ the transformer additionally pays sequence-parallelism "
+        f"and activation-memory costs an O(1) recurrent state avoids: its KV grows at {KV_MB_PER_TOKEN_PER_STREAM * 1024:.0f} KB per token "
+        "of context per stream, which is what forces sharding, ring/Ulysses attention and their "
+        f"communication overhead. Our own measurement shows the asymmetry in the small -- from 2k to 8k the "
+        f"peak-memory ratio went {KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f}x -> {KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f}x, i.e. flat-to-falling in context, while the "
+        "absolute footprint the transformer must shard keeps growing. None of it is in the cost model "
+        "above, which counts step time only, so the omission is CONSERVATIVE. Quantifying it needs a "
+        "multi-GPU long-context TRAINING receipt we do not have.",
+        wrap=True)
+    r += 2
+
     put(ws, r, 1,
         "The prefill component, 16-bit and parameter-matched — the lane the competition serves in. "
         "Parameter counts exactly matched, 1 layer, batch 16, 1 x H100 80GB HBM3, 2026-07-21 — "
