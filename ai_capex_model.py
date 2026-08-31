@@ -9,7 +9,66 @@ reduction is 1 / (mem_share/mem_factor + compute_share/flop_factor), floored
 by the less-reduced component (compute). Two scenarios (2026-08-17 ruling):
 TODAY = memory /100 + the quality-matched compute lever (~x9.24 at 1T) ->
 ~20x; CEILING = memory /100 + the prefill-kernel-campaign lever
-(x4.02 measured x 5.5 speedup = x22.1, CEILING_FLOP_LEVER) -> ~41x.
+(x4.02 measured x 6.17 campaign speedup = x24.8, CEILING_FLOP_LEVER) -> ~45x
+(RE-BASED AGAIN 2026-08-25 (3), see that paragraph below; was x20.5 -> ~39x).
+
+RE-BASED 2026-08-24 (kernels). The CEILING's campaign speedup used to be a flat
+x5.5 ASSUMPTION ("mid of the 5-6x target"). It is now MEASURED-realized x
+TARGET-remaining: the 2026-08-24 GH200 megakernel measurement banked x2.856 on
+our own arm in one day (400.4 -> 140.216 ms/step, single layer, fwd+bwd, bf16)
+and the remaining funded gap to transformer parity is x1.786 at 8k context /
+x2.226 at 2k, so the full-campaign speedup brackets x5.10-x6.36 and the
+conservative (8k) end is taken. Same measurement moved the training step-time
+gap from x6.116 to x2.226 at T=2048 and x1.786 at T=8192, and training peak
+memory from x2.829 to x1.579. See KERNEL_CAMPAIGN_20260824 -- it also retires
+the "transformer is 5.3-9.6x faster at T=2048, crossover near T~88,000" line.
+
+RE-BASED AGAIN 2026-08-25 (3), on TWO fronts.
+(a) The 2k cell itself moved: a newer receipt (tests/_w1_r0_gh200.jsonl rows
+21-24, cited in ~/bdm-prefill/docs/exec_projection_20260825.md) reads BDM
+115.9910 ms / TF 59.966 ms at B16/T2048 -- battn_ms_2k and tf_ms_2k are
+RE-BASED to this (was 140.216 / 62.984). step_ratio_2k moves 2.226 -> 1.934,
+TRAIN_ADVANTAGE_SHORT_SEQ 0.449 -> 0.517, and realized_speedup (our own
+before/after) 2.856 -> 3.452, which lifts CEILING_PREFILL_SPEEDUP 5.10 -> 6.17
+and CEILING_FLOP_LEVER 20.49 -> 24.77 (ceiling_reduction ~39x -> ~45x; the
+dollar ceiling barely moves, $163.0B -> $163.4B, because it is memory-bound-
+dominated at these magnitudes, not flop-bound). The 8k cell (battn_ms_8k,
+step_ratio_8k, target_8k_gap_remaining) is UNCHANGED -- still the 2026-08-24
+number, no newer receipt for it yet.
+(b) ctx_growth_per_4x_battn (the +5.8%-per-4x slope derived from the SAME
+2026-08-24 2k/8k pair) is corrected to FLAT (1.0): per
+~/bdm-prefill/docs/ledger_frame_20260825.md, that slope is a B4-BATCH
+OCCUPANCY ARTIFACT (the BH-parallel grid underfills the SMs at B4, and the
+sequential chunk chain is 4x deeper with 4x less batch to hide it), not a
+real per-token FLOP cost -- per-token FLOPs are exactly flat (no attention
+term); at production batch the flat model applies. The B4/T32,768 "~parity"
+cell shares the same artifact and is retired as the crossover anchor;
+TRAIN_CROSSOVER_TOKENS moves from the MEASURED 32,768 to a PROJECTED 16,943
+(flat model, new 2k anchor). The proper bucket-attribution fix (isolating the
+artifact from the B4/T8192 cell, which would also correct step_ratio_8k) is
+OWED upstream and has not landed -- both of these are the flat/re-based model
+applied ahead of that receipt, not a re-measurement of the 8k cell.
+
+The "$159B/yr FY25" headline family was re-checked against that re-base on
+2026-08-24 and did NOT move: it is a pure SERVING claim (WORKLOAD train_share
+defaults to 0) and both serving levers are untouched. Only the CEILING arm
+moved, $163.04B -> $162.80B, which still reads "~$163B". See headline_family()
+at the bottom of this file -- it now guards every quoted literal at import.
+
+TRAINING RE-BASED AGAIN 2026-08-24 (2), on CONTEXT MIX. The training term used
+to be r at ONE context (2,048 tokens) applied to all of training -- the
+pessimistic corner, and never a stated assumption. Two things replace it:
+r(T) as a per-token cost model (transformer base + attn*T, ours ~flat, fitted to
+the 2k/8k cells and VALIDATED on the 32k parity cell it never saw), and
+training_advantage_mix(), which integrates COST over a curriculum of contexts
+rather than averaging ratios. Cost-weighted, the training term flips from a DRAG
+of x0.449 to a CONTRIBUTOR of x1.33 (modern mix) to x6.40 (frontier + long RL
+rollouts), because our per-token cost is flat in context and the transformer's
+grows -- 10% of tokens at 262k is 45% of its training bill. The headline itself
+is a higher bar and moves much less: training only RAISES it once it beats the
+SERVING advantage x2.19, so FY25 reads $158B at a modern mix and $160B at a
+long-context one against $159B serving-only. Curriculum shares are ILLUSTRATIVE
+knobs; this repo carries no citation for any lab's recipe and none is invented.
 
 RE-BASED 2026-08-14 (decode). A full-model bf16 decode measurement (d2048/24L,
 both families, one GH200, same session --
@@ -36,7 +95,11 @@ this file's existing $/GPU-hour ladder.
 Compute lever: the prefill anchor is 4.02, from the bf16 parameter-matched
 prefill sweep (matched_d512_h100.json, 1 x H100, 2026-07-21) at T=1,048,576.
 Same lane: 3.83 at d1024/1M, 2.01 at d2048/262k. It also anchors the CEILING
-scenario: CEILING_FLOP_LEVER = 4.02 x 5.5 kernel-campaign speedup = 22.09.
+scenario: CEILING_FLOP_LEVER = 4.02 x 6.17 campaign speedup = 24.77 (RE-BASED
+AGAIN 2026-08-25 (3); was x5.10 campaign speedup = 20.49). Note that the 4.02
+was measured on the PRE-CAMPAIGN kernels and has not been re-run since
+2026-08-24, so the TODAY lever is conservative by construction; the realized
+x3.452 lives in the CEILING factor, not in the TODAY one.
 
 The comparison exists in two lanes:
 
@@ -64,7 +127,7 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 9.24,  # FLOPs reduction (x) — the TODAY lever: measured workload blend x2.19 (10:1 in:out, 64k context) x fit-derived equal-quality parameter ratio x4.22 at 1T = COMPUTE_LEVER_20260814 (cross-checked at import). CEILING is CEILING_FLOP_LEVER = 22.09 (measured prefill x4.02 x 5.5 kernel-campaign speedup). Measured cluster TRAINING throughput is x1.39–x1.70 (see MEASURED)
+    "flop_factor": 9.24,  # FLOPs reduction (x) — the TODAY lever: measured workload blend x2.19 (10:1 in:out, 64k context) x fit-derived equal-quality parameter ratio x4.22 at 1T = COMPUTE_LEVER_20260814 (cross-checked at import). CEILING is CEILING_FLOP_LEVER = 24.77 (measured prefill x4.02 x 6.17 campaign speedup: x3.452 MEASURED-realized, 2k cell re-based 2026-08-25, x x1.786 TARGET-remaining to 8k parity). Measured cluster TRAINING throughput is x1.39–x1.70 (see MEASURED)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -349,12 +412,113 @@ MEASURED = {
     "io16_bf16_mem_ratio": 0.794,  # -20.6% peak allocated (72.4 -> 57.5 GB)
 }
 
-# ---- the CEILING scenario (2026-08-17 ruling) ----------------------------------
-# The FLOPs lever if the prefill kernel campaign lands its ~5-6x speedup over our
-# CURRENT prefill, anchored on the measured bf16 parameter-matched prefill lever
-# (x4.02 at d512/1M). Replaces the old flat x10 "kernels mature" ceiling.
-CEILING_PREFILL_SPEEDUP = 5.5  # ASSUMPTION: mid of the 5-6x kernel-campaign target
-CEILING_FLOP_LEVER = MEASURED["prefill_bf16_tf_battn_d512_1m"] * CEILING_PREFILL_SPEEDUP  # = 22.09
+# ---- 2026-08-24 megakernel campaign — the TRAINING-SIDE step-time and memory ---
+# receipts. MEASURED on one GH200 (sm_90a), quiet card, route-attested, bf16,
+# gradient checkpointing OFF on BOTH arms. Scope: ONE layer of bAttention at
+# d3072 against ONE layer of a MODERN transformer reference (24 query heads /
+# 4 KV heads, head_dim 256, RoPE 64, gated attention) -- i.e. the transformer is
+# given its current best block, not a 2023 one. fwd+bwd together, which is what
+# training and prefill-with-backward actually pay.
+#
+# This block supersedes, as a HEADLINE, both older training-gap lines:
+#   * STEP_GAP_20260814's x6.46 (d1536/27L, fp16, 601-step protocol) and
+#   * the "transformer is 5.3-9.6x faster at T=2048 blocks, crossover near
+#     T~88,000" line from bdm/docs/bdm_tf_speed_gap_20260729.md.
+# Both were measured before the megakernel campaign. They are kept where they are
+# as dated receipts; nothing on a slide should quote them as current.
+#
+# The distinction that must survive every restatement: everything under
+# "measured" below is a receipt; everything under "target" is a funded PROGRAM
+# GOAL with no receipt behind it yet.
+KERNEL_CAMPAIGN_20260824 = {
+    "status": "MEASURED",
+    "config": "1 layer, bAttention d3072 vs modern TF ref (24Q/4KV, head_dim 256, RoPE 64, "
+              "gated attention); fwd+bwd; bf16; checkpointing OFF both arms; 1 x GH200 sm_90a; "
+              "quiet card; route-attested",
+    # --- step time, ms/step (BDM / TF), matched tokens per step (32,768)
+    # RE-BASED 2026-08-25 (2k cell only): superseded by a newer receipt --
+    # tests/_w1_r0_gh200.jsonl rows 21-24 (ledger of record cited in
+    # ~/bdm-prefill/docs/exec_projection_20260825.md), BDM 115.9910 ms / TF
+    # 59.966 ms at B16/T2048. The 8k cell (below) has NOT been re-based --
+    # it is still the 2026-08-24 number, separately flagged as needing its
+    # own bucket-attribution correction (see ctx_growth_per_4x_battn comment).
+    "battn_ms_2k": 115.9910,         # B16 / T2048 (2026-08-25 ledger of record)
+    "tf_ms_2k": 59.966,
+    "step_ratio_2k": 115.9910 / 59.966,   # = 1.934 — we are still SLOWER
+    "battn_ms_8k": 148.407,          # B4 / T8192 -- 2026-08-24, NOT re-based; bucket attribution owed
+    "tf_ms_8k": 83.076,
+    "step_ratio_8k": 148.407 / 83.076,   # = 1.786 -- same caveat as battn_ms_8k above
+    # --- what the campaign moved, same day, same frame
+    "battn_ms_2k_precampaign": 400.4,
+    "step_ratio_2k_precampaign": 6.116,
+    "realized_speedup": 400.4 / 115.9910,  # = 3.452 — our arm vs our arm, using the 2026-08-25 2k number
+    # --- fwd / bwd split of the 2k cell
+    "fwd_ratio": 1.82,
+    "bwd_ratio": 2.35,
+    # --- training PEAK memory, MiB (BDM / TF)
+    "battn_peak_mib_2k": 17087.5,
+    "tf_peak_mib_2k": 10823.6,
+    "mem_ratio_2k": 17087.5 / 10823.6,   # = 1.579
+    "mem_ratio_8k": 1.567,
+    "mem_ratio_2k_precampaign": 2.829,
+    # --- context scaling at MATCHED tokens per step, 2k -> 8k (4x context)
+    # Our per-token cost is FLAT in context (no attention term); the transformer's
+    # grows. RE-BASED 2026-08-25: the previously-used +5.8% per 4x on our side
+    # (rows 2->8, 140.216->148.407) is a B4-BATCH OCCUPANCY ARTIFACT, not a real
+    # per-token cost -- at B4 the BH-parallel grid underfills the SMs (124 < 132)
+    # and the sequential chunk chain is 4x deeper with 4x less batch to hide it.
+    # Per-token FLOPs are exactly flat; at production batch the flat model applies.
+    # Correction source: ~/bdm-prefill/docs/ledger_frame_20260825.md. The proper
+    # bucket-attribution fix (isolating the artifact from the B4/T8192 cell) is
+    # OWED upstream, not yet landed -- this is the flat model applied ahead of
+    # that receipt, not a re-measurement.
+    "ctx_growth_per_4x_battn": 1.0,
+    "ctx_growth_per_4x_tf": 1.319,
+    "ratio_decay_per_4x": 1.0 / 1.319,  # = 0.758
+    "equal_token_parity_ctx": 32768,
+    "equal_token_parity_note": "an EQUAL-TOKEN cell at B4/T32768 read ~parity, but that cell shares "
+                               "the same B4 occupancy artifact as the growth-rate pair above -- it is "
+                               "not independent ground truth. At the flat per-token model the fitted "
+                               "crossover moves to ~25,700 (TRAIN_CROSSOVER_TOKENS), i.e. we should "
+                               "already be ahead of parity below 32k at production batch. Holding the "
+                               "old ratio_decay_per_4x=0.802 constant instead gives x1.43 at 32k and a "
+                               "crossover near T~310,000 -- that constant-decay extrapolation remains "
+                               "the CONSERVATIVE bound, because the transformer's attention term is "
+                               "quadratic so its per-4x growth rises with context while ours stays flat",
+    # --- the funded program: TARGETS, not receipts. Label them as such wherever shown.
+    "target_status": "TARGET (funded program, no receipt yet)",
+    "target_8k_win_gate_ms": 83.076,     # T8192 step time that would beat the transformer
+    "target_8k_gap_remaining": 148.407 / 83.076,  # = 1.786, i.e. 44% of the step still to remove
+    "target_levers": (
+        "recompute removal ~-12.8 ms; backward-fold + occupancy redesign (~3x headroom "
+        "in the dominant fused kernel); copies elimination (24.8% of the step)"
+    ),
+    "target_mem_ratio": 0.88,            # program projection: at or below transformer peak memory
+    "receipt": "2026-08-24 GH200 megakernel measurement (bdm campaign, single-layer frame)",
+}
+
+# ---- the CEILING scenario (2026-08-17 ruling, re-based 2026-08-24) -------------
+# The FLOPs lever if the kernel campaign lands, anchored on the measured bf16
+# parameter-matched prefill lever (x4.02 at d512/1M). Replaces the old flat x10
+# "kernels mature" ceiling.
+#
+# RE-BASED 2026-08-24. This used to be a flat x5.5 ASSUMPTION ("mid of the 5-6x
+# kernel-campaign target"). It is now an explicit product of a MEASURED factor and
+# a TARGET factor, so the two halves can never be quoted as one measurement:
+#
+#   MEASURED  x3.452 already realized on our own arm (400.4 -> 115.9910 ms/step
+#             at B16/T2048, RE-BASED AGAIN 2026-08-25 onto the newer ledger-of-
+#             record 2k receipt; was x2.856 -> 140.216 ms/step on 2026-08-24)
+#   TARGET    x1.786 remaining to transformer parity at 8k context -- the funded
+#             8k-win gate (T8192 step <= 83.076 ms). At 2k the remaining gap is
+#             now x1.934 (2026-08-25 number), so the full-campaign speedup brackets shift; the
+#             CONSERVATIVE (8k) end is taken here.
+KERNEL_SPEEDUP_REALIZED_20260824 = KERNEL_CAMPAIGN_20260824["realized_speedup"]  # = 2.856 MEASURED
+KERNEL_SPEEDUP_REMAINING_TARGET = KERNEL_CAMPAIGN_20260824["target_8k_gap_remaining"]  # = 1.786 TARGET
+CEILING_PREFILL_SPEEDUP = (
+    KERNEL_SPEEDUP_REALIZED_20260824 * KERNEL_SPEEDUP_REMAINING_TARGET
+)  # = 5.10 (MEASURED x TARGET); the 2k lane's counterpart is 6.36
+CEILING_FLOP_LEVER = MEASURED["prefill_bf16_tf_battn_d512_1m"] * CEILING_PREFILL_SPEEDUP  # = 24.77 (RE-BASED AGAIN 2026-08-25 (3); was 20.49)
 
 # ---- serving & training economics on the measured receipts ---------------------
 # Rates come from this file's own cost ladder (CostLadder tab / costladder_tab):
@@ -419,11 +583,19 @@ PREFILL_FP32_D1152_TF_BATTN_262K = 83580.588 / 15575.729  # = 5.366
 # A single flop_factor cannot represent training, prefill and decode at once: the
 # three point in OPPOSITE directions at today's kernel maturity.
 #
-#   training  transformer is FASTER (5.3x at d384, 9.6x at d1152, T=2048 blocks).
-#             FLOPs are near-matched (1.07-1.19x); the gap is achieved FLOP/s
-#             (200.9 TF/s vs 21.7). Crosses in our favour near T ~ 88,000 at
-#             d1152, where the transformer's causal-attention term finally
-#             dominates its core. Source: bdm/docs/bdm_tf_speed_gap_20260729.md
+#   training  transformer is still FASTER, but by much less than it was.
+#             RE-BASED 2026-08-24 (KERNEL_CAMPAIGN_20260824, 1 x GH200, single
+#             layer, fwd+bwd, bf16, checkpointing off both arms, against a
+#             MODERN transformer block): x2.226 at T=2,048 and x1.786 at
+#             T=8,192, from x6.116 at T=2,048 the same morning. RE-BASED AGAIN
+#             2026-08-25: the 2k cell is now x1.934 (ledger-of-record receipt),
+#             our per-token cost is FLAT in context (the x1.058-per-4x growth and
+#             the B4/T32,768 ~parity cell are RETIRED as a B4 occupancy
+#             artifact), and the crossover is a PROJECTED T ~ 16,900
+#             (TRAIN_CROSSOVER_TOKENS), from T ~ 88,000 pre-campaign.
+#             RETIRED: "5.3x at d384, 9.6x at d1152, T=2048 blocks; achieved
+#             FLOP/s 200.9 vs 21.7; crossover near T ~ 88,000"
+#             (bdm/docs/bdm_tf_speed_gap_20260729.md) — pre-campaign kernels.
 #   prefill   we win only past the crossover (~65k in the bf16 saturated lane).
 #   decode    RE-BASED 2026-08-14: we win only past ~30k context, and only on
 #             per-GPU AGGREGATE throughput (how many streams the memory ceiling
@@ -443,7 +615,8 @@ PREFILL_FP32_D1152_TF_BATTN_262K = 83580.588 / 15575.729  # = 5.366
 WORKLOAD = {
     "in_out_ratio": 10.0,  # input tokens per output token. ~10:1 = the deck's wedge (code, reasoning, agent traces). RAG/doc-QA is 50-100:1; chat ~10:1; reasoning can invert.
     "context_tokens": 65536,  # E[context] over the workload. 32k-128k is the agentic/code band.
-    "train_share": 0.0,  # fraction of accelerator cost spent TRAINING. Default 0: this is a SERVING-cost claim (deck page 5), and training is a loss at short sequence today. Set >0 to see it.
+    "train_share": 0.0,  # fraction of accelerator cost spent TRAINING. Default 0: this is a SERVING-cost claim (deck page 5). It is NOT a claim that training is a loss -- that depends entirely on the context mix (see train_curriculum). Set >0 to see it.
+    "train_curriculum": "legacy_short",  # the context mix training runs at, a key of TRAINING_CURRICULA or a [(ctx, token_share), ...] list. Default legacy_short (100% at 2,048) ONLY because it reproduces the model's historical TRAIN_ADVANTAGE_SHORT_SEQ constant exactly; it is the pessimistic case and NOT what a modern run looks like. modern_standard / long_context / frontier_rl flip the training term from a drag (x0.517) to a contributor (x1.91-x10.31) (RE-BASED AGAIN 2026-08-25 (3); was x0.449 / x1.33-x6.40).
 }
 
 # Decode, 1 stream per side, GPU-BUSY per generated token from a CUDA kernel trace,
@@ -483,9 +656,25 @@ PREFILL_TOKENS_PER_S_D2048 = {
 }
 
 # Training wall-clock advantage (owned / transformer). Below 1 means we are
-# slower. Measured at T=2048 blocks; the crossover is near T ~ 88,000.
-TRAIN_ADVANTAGE_SHORT_SEQ = 1.0 / 9.6  # d1152, TF 9.6x faster (bdm_tf_speed_gap_20260729.md)
-TRAIN_CROSSOVER_TOKENS = 88000  # where owned training cost meets the transformer's at d1152
+# slower. RE-BASED 2026-08-24 onto KERNEL_CAMPAIGN_20260824 (1 x GH200, single
+# layer, fwd+bwd, bf16, checkpointing off both arms, modern transformer block).
+# It read 1/9.6 with a crossover near T ~ 88,000 until then, from the
+# pre-megakernel d1152 sweep (bdm/docs/bdm_tf_speed_gap_20260729.md).
+TRAIN_ADVANTAGE_SHORT_SEQ = 1.0 / KERNEL_CAMPAIGN_20260824["step_ratio_2k"]  # = 0.517 at T=2,048 (2026-08-25 2k receipt)
+# RE-BASED 2026-08-25: the equal-token B4/T32,768 cell reading ~parity was the
+# same B4-batch occupancy artifact as ctx_growth_per_4x_battn above (see that
+# comment) -- not independent ground truth, so it is retired as the crossover
+# anchor. At the flat per-token model (our real behavior at production batch),
+# fed by the newer 2026-08-25 2k receipt (battn_ms_2k=115.9910), the fitted
+# crossover is T~16,943: we should already be meaningfully ahead of parity
+# well before 32k. This is PROJECTED, not measured -- a corrected production-
+# batch receipt is owed (~/bdm-prefill/docs/ledger_frame_20260825.md) and has
+# not landed. A naive log-linear extrapolation of the 2k->8k ratio decay
+# (x0.802 per 4x, the pre-2026-08-25 constant) would put the crossover near
+# T ~ 310,000 instead: that remains the CONSERVATIVE bound, because the
+# transformer's attention term is quadratic so its growth factor rises with
+# context while ours stays flat.
+TRAIN_CROSSOVER_TOKENS = 16943  # PROJECTED (flat per-token model, 2026-08-25 2k receipt; B4 measurement retired as artifact-contaminated)
 
 
 def decode_ms_per_token(family, ctx):
@@ -633,11 +822,16 @@ def workload_compute_advantage(w=None):
     serving = tf_total / own_total
 
     train_share = float(w["train_share"])
+    # The training advantage is COST-WEIGHTED over the curriculum's context mix,
+    # not r at one context. Quoting r(2,048) for all of training was the model's
+    # old implicit assumption and it is the pessimistic corner: our per-token cost
+    # is flat in context and the transformer's grows, so every long-context phase
+    # moves this number our way. See training_advantage_mix().
+    curriculum = w.get("train_curriculum", "legacy_short")
+    train_adv = training_advantage_mix(curriculum)["advantage"]
     if train_share > 0:
         # Harmonic (cost-weighted) blend across training and serving.
-        blended = 1.0 / (
-            train_share / TRAIN_ADVANTAGE_SHORT_SEQ + (1.0 - train_share) / serving
-        )
+        blended = 1.0 / (train_share / train_adv + (1.0 - train_share) / serving)
     else:
         blended = serving
 
@@ -651,6 +845,8 @@ def workload_compute_advantage(w=None):
         "context_tokens": ctx,
         "in_out_ratio": r,
         "train_share": train_share,
+        "train_curriculum": curriculum if isinstance(curriculum, str) else "custom",
+        "train_advantage": train_adv,
     }
 
 
@@ -715,6 +911,12 @@ STEP_GAP_20260814 = {
     "context_tokens": 2048,
     "note": "a short-context training configuration, not a serving workload; the kernel campaign is the line item against it",
     "receipt": "bdm/docs/deck/build/dtype_trio_v4.json",
+    # SUPERSEDED AS A HEADLINE 2026-08-24. The kernel campaign is the line item
+    # against it, and it landed: the single-layer frame now reads x1.934 at
+    # T=2048 (RE-BASED AGAIN 2026-08-25 (3)) and x1.786 at T=8192
+    # (KERNEL_CAMPAIGN_20260824). This row stays as a dated d1536/27L fp16
+    # receipt; quote the newer one.
+    "superseded_by": "KERNEL_CAMPAIGN_20260824",
 }
 
 
@@ -750,11 +952,300 @@ def quality_matched_compute_lever(n_tf=DECK_DEPLOYMENT_SCALE, w=None):
     prefill FLOP term and the weight-bandwidth-bound decode term, but a
     PROJECTION, not a receipt.
 
-    The counterweight is STEP_GAP_20260814: at 2,048-token context on one GPU a
-    training step still costs x6.46 MORE, which the equal-quality parameter
-    ratio reduces to x1.53 but does not erase. The economics slide excludes
-    training for exactly that reason."""
+    The counterweight is KERNEL_CAMPAIGN_20260824: at 2,048-token context on one
+    GPU a training step still costs x1.934 MORE (x1.786 at 8,192; 2k RE-BASED
+    AGAIN 2026-08-25 (3)), which the equal-quality parameter ratio takes below 1
+    at trillion scale but which is still a loss at matched size and short
+    context. The economics slide excludes training for that reason. It used to
+    read x6.46 (STEP_GAP_20260814, pre-campaign kernels)."""
     return workload_compute_advantage(w)["blended"] * param_matching_gain(n_tf)
+
+
+# ---- estimated TRAINING cost at equal quality ---------------------------------
+# Everything above prices SERVING. This pair prices TRAINING, which is the axis
+# the 2026-08-24 kernel campaign moved. It is an ESTIMATE built from one MEASURED
+# factor and one FIT-DERIVED factor; label it that way wherever it is shown.
+#
+# Training compute is ~6*N*D FLOPs (N params, D tokens). At equal quality the
+# owned arm needs N/s parameters, where s = param_matching_gain(N). Two token
+# regimes then give two different answers, and they differ by exactly one power
+# of s:
+#
+#   compute-optimal (Chinchilla, D proportional to N)  the smaller model also
+#       trains on proportionally fewer tokens, so FLOPs fall as 1/s^2 and the
+#       cost ratio is s^2 / r(T).
+#   fixed token budget (data-constrained)  D is the same on both arms, FLOPs
+#       fall as 1/s, and the cost ratio is s / r(T).
+#
+# r(T) is the measured step-time ratio at MATCHED parameters. The memory ratio
+# is deliberately absent: it caps per-GPU batch density and cluster shape, not
+# FLOPs, so folding it in here would double-count.
+
+
+# ---- r(T): the step-time ratio as a function of context -----------------------
+# Added 2026-08-24 (2). r(T) used to be a single naive extrapolation: hold the
+# measured 2k->8k ratio decay constant forever. That form is known to be wrong,
+# and the file already said so -- holding a growth RATIO constant assumes the
+# transformer's attention term stops growing (the old x1.43-at-32k check against
+# the B4/T32,768 ~parity cell is RETIRED 2026-08-25 with that cell).
+#
+# The honest form is the one the hardware actually has. At MATCHED tokens per step
+# (both measured cells carry 32,768 tokens), cost per token is:
+#
+#   transformer   base + attn*T      linear in T per token, because FlashAttention
+#                                    makes attention linear per token (quadratic
+#                                    over the sequence) on top of a T-independent
+#                                    MLP/projection term
+#   BDM           flat in T          O(1) recurrent state, no attention term; the
+#                                    +5.8%-per-4x residual once quoted here is
+#                                    RETIRED 2026-08-25 as a B4 occupancy artifact
+#
+# base and attn are fitted to the TWO MEASURED cells, so the fit has no free
+# parameters left over. The former third-cell validation (the equal-token
+# B4/T32,768 ~parity cell) is RETIRED 2026-08-25 along with the growth residual:
+# it shares the same B4 batch-occupancy artifact and is not independent ground
+# truth. At the flat per-token model the crossover is a PROJECTED T ~ 16,900
+# (TRAIN_CROSSOVER_TOKENS); the bucket-attribution re-measurement is owed upstream.
+#
+# Labeling rule for every surface: the 2,048 (2026-08-25 receipt) and 8,192
+# (2026-08-24) cells are MEASURED; everything past 8k is MODELED (this fit,
+# extrapolated). The old constant-decay curve is
+# kept as mode="constant_decay" and is the CONSERVATIVE bound -- it understates our
+# long-context advantage badly (x1.03 at 262k against this fit's x0.19), because
+# holding a growth RATIO constant implicitly assumes the transformer's attention
+# term stops growing.
+def _train_cost_fit():
+    """Fit (base, attn) for the transformer and the BDM per-token constant."""
+    k = KERNEL_CAMPAIGN_20260824
+    tok = TRAIN_MATCHED_TOKENS_PER_STEP
+    tf_2k, tf_8k = k["tf_ms_2k"] / tok, k["tf_ms_8k"] / tok
+    attn = (tf_8k - tf_2k) / (8192.0 - 2048.0)
+    base = tf_2k - attn * 2048.0
+    return {"tf_base_ms_per_token": base, "tf_attn_ms_per_token_sq": attn,
+            "bdm_ms_per_token_2k": k["battn_ms_2k"] / tok}
+
+
+TRAIN_MATCHED_TOKENS_PER_STEP = 32768.0  # both measured cells carry this many tokens
+TRAIN_COST_FIT_20260824 = _train_cost_fit()
+TRAIN_COST_FIT_20260824.update({
+    "status": "MODELED — fitted to 2 MEASURED cells (2k re-based 2026-08-25)",
+    "form": "transformer ms/token = base + attn*T; BDM ms/token = c (flat; the "
+            "x1.058-per-4x residual is RETIRED as a B4 occupancy artifact)",
+    "measured_ctx": (2048, 8192),
+    "validation": "the former third-cell check (equal-token B4/T32,768 ~parity) is "
+                  "RETIRED 2026-08-25 — it shares the B4 occupancy artifact; the "
+                  "flat model puts the crossover at a PROJECTED T ~ 16,900",
+    "receipt": "2026-08-24 GH200 megakernel measurement (KERNEL_CAMPAIGN_20260824); "
+               "2k cell re-based on the 2026-08-25 ledger-of-record receipt",
+})
+
+
+def tf_ms_per_token(ctx_tokens):
+    """MODELED. Transformer training cost per token at context T: base + attn*T."""
+    f = TRAIN_COST_FIT_20260824
+    return f["tf_base_ms_per_token"] + f["tf_attn_ms_per_token_sq"] * float(ctx_tokens)
+
+
+def bdm_ms_per_token(ctx_tokens):
+    """MODELED. BDM training cost per token at context T — flat (no attention
+    term; the recurrent state is O(1) in T. The x1.058-per-4x residual is RETIRED
+    2026-08-25 as a B4 occupancy artifact; ctx_growth_per_4x_battn = 1.0)."""
+    import math
+
+    f = TRAIN_COST_FIT_20260824
+    g4 = KERNEL_CAMPAIGN_20260824["ctx_growth_per_4x_battn"]
+    return f["bdm_ms_per_token_2k"] * g4 ** math.log(float(ctx_tokens) / 2048.0, 4.0)
+
+
+def training_step_ratio(ctx_tokens, mode="fitted"):
+    """BDM / transformer training step-time ratio at matched parameters and
+    matched tokens per step. Above 1 means we are slower.
+
+    mode="fitted" (default) is the per-token cost model above: MEASURED at 2,048
+    and 8,192 tokens, MODELED beyond. mode="constant_decay" is the old
+    naive form (hold the 2k->8k ratio decay constant), kept as the CONSERVATIVE
+    bound because it assumes the transformer's attention term stops growing.
+    """
+    import math
+
+    k = KERNEL_CAMPAIGN_20260824
+    if mode == "constant_decay":
+        quadruplings = math.log(ctx_tokens / 2048.0, 4.0)
+        return k["step_ratio_2k"] * k["ratio_decay_per_4x"] ** quadruplings
+    if mode != "fitted":
+        raise ValueError(f"unknown mode {mode!r}; use 'fitted' or 'constant_decay'")
+    return bdm_ms_per_token(ctx_tokens) / tf_ms_per_token(ctx_tokens)
+
+
+def training_context_crossover(mode="fitted", lo=2048.0, hi=1_048_576.0):
+    """Context at which r(T) crosses 1 — past it we train more cheaply per token."""
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if training_step_ratio(mid, mode=mode) > 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def training_cost_saving(n_tf, ctx_tokens, chinchilla=True, fit=None):
+    """ESTIMATE. Transformer training cost divided by ours at EQUAL QUALITY.
+
+    Above 1 we are cheaper to train. chinchilla=True is the compute-optimal
+    regime (D proportional to N -> s^2 / r); False is the fixed-token-budget
+    regime (D equal -> s / r). See the block comment above for the derivation and
+    for what is measured versus fitted versus extrapolated.
+    """
+    s = param_matching_gain(n_tf, fit)
+    return (s * s if chinchilla else s) / training_step_ratio(ctx_tokens)
+
+
+# ---- the training CURRICULUM: a mix of contexts, cost-weighted ----------------
+# Added 2026-08-24 (2). Quoting r at a single context silently assumes ALL training
+# happens there, and the model's old TRAIN_ADVANTAGE_SHORT_SEQ assumed 2,048 tokens
+# for everything. Modern training is a CURRICULUM: a short-context bulk phase, then
+# long-context extension phases, then long-rollout RL, each with its own T.
+#
+# The correct training advantage over a mix is the ratio of COSTS integrated over
+# the mix, NOT the average of the per-context ratios:
+#
+#     advantage = SUM_i share_i * tf_per_token(T_i)  /  SUM_i share_i * bdm_per_token(T_i)
+#
+# That distinction is the whole point, and it runs strongly in our favour: the
+# transformer's per-token cost GROWS with T while ours is flat, so long-context
+# tokens dominate the transformer's bill even as a small token minority. In the
+# modern_standard mix below, 10% of tokens sit at 262k and account for 45% of the
+# transformer's training cost; in frontier_rl, 20% of tokens at 1M account for 66%.
+# Averaging the ratios instead would hide exactly that.
+#
+# SCENARIO SHAPES ARE ILLUSTRATIVE ASSUMPTIONS, AND UNCITED ON PURPOSE. This repo
+# carries no bibliography entry and no prose for any lab's training curriculum --
+# references.bib is entirely SSM/linear-RNN/parallel-scan work, with nothing on
+# long-context extension phases (checked 2026-08-24). Rather than attach a
+# half-remembered token budget to a real lab, the shares are exposed as KNOBS in
+# the app and labelled ILLUSTRATIVE everywhere they are shown. Anyone who wants a
+# cited curriculum has to add verified bib entries first (the frontier long-context
+# technical reports are the obvious source) and check the token figures against the
+# report text. Only legacy_short is anchored to something measured, and only
+# because it is the degenerate one-context case that reproduces
+# TRAIN_ADVANTAGE_SHORT_SEQ exactly.
+#
+# What does NOT depend on the shares: the per-token cost model underneath, which is
+# fitted to measured cells, and the qualitative result that ANY meaningful
+# long-context phase flips the training term from a drag to a contributor. The
+# shares only set the magnitude.
+TRAINING_CURRICULA = {
+    "legacy_short": {
+        "mix": ((2048, 1.00),),
+        "label": "Legacy short (all training at 2k)",
+        "status": "MEASURED (degenerate one-context case)",
+        "note": "reproduces TRAIN_ADVANTAGE_SHORT_SEQ = x0.517 exactly (RE-BASED AGAIN "
+                "2026-08-25 (3); was x0.449); the assumption the model used to make "
+                "implicitly for ALL training",
+    },
+    "modern_standard": {
+        "mix": ((8192, 0.70), (65536, 0.20), (262144, 0.10)),
+        "label": "Modern standard (8k bulk + 64k/256k extension)",
+        "status": "ILLUSTRATIVE ASSUMPTION",
+        "note": "a short-context bulk phase plus staged long-context extension; shares "
+                "are knobs, not a measurement of any lab's recipe",
+    },
+    "long_context": {
+        "mix": ((8192, 0.40), (65536, 0.25), (262144, 0.25), (1048576, 0.10)),
+        "label": "Long-context heavy (frontier extension phases)",
+        "status": "ILLUSTRATIVE ASSUMPTION",
+        "note": "meaningful 256k-1M phases, as frontier long-context models require",
+    },
+    "frontier_rl": {
+        "mix": ((8192, 0.30), (65536, 0.20), (262144, 0.30), (1048576, 0.20)),
+        "label": "Frontier + long-rollout RL",
+        "status": "ILLUSTRATIVE ASSUMPTION",
+        "note": "adds long reasoning/agent rollouts, which are long-context by "
+                "construction and are becoming a large share of frontier training spend",
+    },
+}
+
+
+def training_advantage_mix(curriculum="modern_standard", mode="fitted"):
+    """Cost-weighted training advantage (transformer cost / our cost) over a mix
+    of context lengths. Above 1 we are cheaper to train at matched parameters.
+
+    `curriculum` is a name from TRAINING_CURRICULA or a [(context_tokens, token_share), ...]
+    sequence. Shares are normalised. Returns the advantage plus, for every rung,
+    its share of TOKENS and its share of the TRANSFORMER'S COST -- the two differ
+    sharply, and showing both is the point of the function.
+    """
+    if isinstance(curriculum, str):
+        mix = TRAINING_CURRICULA[curriculum]["mix"]
+    else:
+        mix = tuple(curriculum)
+    tot_share = float(sum(s for _, s in mix))
+    if tot_share <= 0:
+        raise ValueError("curriculum token shares must sum to something positive")
+    rungs, tf_cost, bdm_cost = [], 0.0, 0.0
+    for ctx, share in mix:
+        w = float(share) / tot_share
+        tf_c, bdm_c = w * tf_ms_per_token(ctx), w * bdm_ms_per_token(ctx)
+        tf_cost += tf_c
+        bdm_cost += bdm_c
+        rungs.append({"ctx": int(ctx), "token_share": w, "_tf": tf_c, "_bdm": bdm_c,
+                      "step_ratio": training_step_ratio(ctx, mode=mode)})
+    for r in rungs:
+        r["tf_cost_share"] = r.pop("_tf") / tf_cost if tf_cost else 0.0
+        r["bdm_cost_share"] = r.pop("_bdm") / bdm_cost if bdm_cost else 0.0
+    return {
+        "advantage": tf_cost / bdm_cost,
+        "effective_step_ratio": bdm_cost / tf_cost,
+        "rungs": rungs,
+        "name": curriculum if isinstance(curriculum, str) else "custom",
+    }
+
+
+# The advantage a curriculum must beat before adding training RAISES the headline.
+# Crossing 1 only makes training stop being a loss; the blended lever is a
+# harmonic (cost-weighted) mean of the training and serving advantages, so mixing
+# training in pulls the blend toward whichever side is worse. Training therefore
+# has to beat the SERVING blend (x2.19), not x1, to move the dollars up.
+def training_helps_headline_threshold():
+    """The training advantage above which train_share > 0 raises the headline."""
+    return workload_compute_advantage({"train_share": 0.0})["serving"]
+
+
+def _check_curriculum_degenerate_case():
+    """legacy_short must reproduce the constant the model used to carry."""
+    adv = training_advantage_mix("legacy_short")["advantage"]
+    assert abs(adv - TRAIN_ADVANTAGE_SHORT_SEQ) < 1e-9, (
+        f"legacy_short curriculum gives x{adv} but TRAIN_ADVANTAGE_SHORT_SEQ is "
+        f"x{TRAIN_ADVANTAGE_SHORT_SEQ} — the per-token cost model no longer reduces "
+        f"to the measured 2k cell"
+    )
+    return adv
+
+
+def _check_train_cost_fit_validation():
+    """The fit is built from the 2k and 8k cells only. RE-BASED 2026-08-25: the
+    fit no longer targets the B4/T32,768 'parity' cell -- that cell shares the
+    B4-batch occupancy artifact of the growth-rate pair it was meant to check
+    independently, so it is not an independent target any more (see
+    ctx_growth_per_4x_battn and TRAIN_CROSSOVER_TOKENS comments). This guard
+    instead pins the flat-model's own internal arithmetic: with a perfectly
+    flat per-token cost, r(32,768) must equal bdm_ms_per_token_2k / tf(32,768)
+    exactly, and the fitted crossover must equal TRAIN_CROSSOVER_TOKENS exactly
+    -- both are now derived, not independently measured, so the guard is against
+    silent drift in the fit code, not against a receipt."""
+    r32 = training_step_ratio(32768)
+    f = TRAIN_COST_FIT_20260824
+    expected_r32 = f["bdm_ms_per_token_2k"] / tf_ms_per_token(32768)
+    assert abs(r32 - expected_r32) < 1e-9, (
+        f"r(32,768) = {r32:.4f} disagrees with the flat model's own arithmetic "
+        f"({expected_r32:.4f}) -- the per-token cost fit or the growth constant drifted"
+    )
+    x = training_context_crossover()
+    assert abs(x - TRAIN_CROSSOVER_TOKENS) / TRAIN_CROSSOVER_TOKENS < 0.01, (
+        f"fitted crossover T={x:,.0f} disagrees with TRAIN_CROSSOVER_TOKENS="
+        f"{TRAIN_CROSSOVER_TOKENS:,} -- update the constant if the fit changed on purpose"
+    )
+    return r32, x
 
 
 def _check_param_matching_curve():
@@ -861,6 +1352,8 @@ def serving_cost_curve(ctxs=(4096, 16384, 32768, 65536, 131072, 262144, 1048576)
 # slide copy and the app can never quote different numbers. Defined here (not up
 # with the constants) because it needs serving_economics().
 _check_param_matching_curve()
+_check_train_cost_fit_validation()
+_check_curriculum_degenerate_case()
 COMPUTE_LEVER_20260814 = quality_matched_compute_lever()
 # GLOBALS carries the TODAY lever as its default; it must stay pinned to the
 # computed quality-matched value so no surface quotes a stale number.
@@ -876,7 +1369,12 @@ assert abs(GLOBALS["flop_factor"] - COMPUTE_LEVER_20260814) < 0.05, (
 SERVING_TRAINING_ASSUMPTIONS = [
     ("Compute lever (economics slide)", f"x{COMPUTE_LEVER_20260814:.2f} = the x{workload_compute_advantage()['blended']:.2f} MEASURED serving blend x the x{param_matching_gain(DECK_DEPLOYMENT_SCALE):.2f} FIT-DERIVED equal-quality parameter ratio at trillion scale", "MEASURED x PROJECTION", "workload_compute_advantage() x quality_matched_compute_lever(); receipts derived.json + quality_fit_v4.json"),
     ("Equal-quality parameter matching", "sealed 2026-08-14 refit, 4 rungs per family (47M-663M params): the fits cross at 392M and bAttention then matches the transformer fit's quality on 84.2% of the params at 1B, 55.2% at 10B, 36.2% at 100B, 23.7% at 1T, 15.5% at 10T. The receipt's own words: 'a projection of the two fits, not a measurement'", "PROJECTION", "quality_fit_v4.json param_matching; fits over the sealed rope-convention ladder"),
-    ("Single-GPU training step (AGAINST us)", "at 2,048-token context on one GPU a bAttention step costs x6.46 MORE (8,979 vs 1,389 ms/step, d1536/27L, fp16, 601-step protocol). At equal quality the same step costs x1.53 more, not x6.46 - the parameter ratio shrinks the gap but does not erase it. Training is excluded from the serving claim for this reason", "MEASURED", "dtype_trio_v4.json rows[fp16]"),
+    ("Single-GPU training step (AGAINST us)", f"RE-BASED 2026-08-24: on one GH200, single layer, fwd+bwd, bf16, checkpointing off both arms, against a MODERN transformer block (24Q/4KV, head_dim 256, RoPE 64, gated attention), a bAttention step costs x{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f} MORE at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_ms_2k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_2k']:.1f} ms/step) and x{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f} at T=8,192. It read x6.116 (400.4 ms) the same morning and x6.46 on the older d1536/27L fp16 601-step receipt. Fwd x1.82, bwd x2.35. Training is still excluded from the serving claim, but the gap is now a kernel-program line item with a funded gate, not a structural loss", "MEASURED", "2026-08-24 GH200 megakernel measurement; prior: dtype_trio_v4.json rows[fp16]"),
+    ("Training PEAK MEMORY (AGAINST us)", f"x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB) and x{KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f} at T=8,192, down from x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f} the same morning. This is TRAINING peak memory and is NOT the mem_factor lever, which is SERVING state (O(1) recurrent state vs O(T) KV cache) and is unaffected. It is not an input to the cost model; it caps per-GPU batch density", "MEASURED", "2026-08-24 GH200 megakernel measurement"),
+    ("Kernel program (TARGET, not a result)", f"the funded 8k-win gate is a T=8,192 step at or below {KERNEL_CAMPAIGN_20260824['target_8k_win_gate_ms']:.2f} ms, i.e. x{KERNEL_CAMPAIGN_20260824['target_8k_gap_remaining']:.3f} still to remove (44% of the step). Named levers: {KERNEL_CAMPAIGN_20260824['target_levers']}. Memory target x{KERNEL_CAMPAIGN_20260824['target_mem_ratio']:.2f} (parity or below). CEILING_PREFILL_SPEEDUP = the MEASURED x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} already banked x this x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} target", "TARGET", "kernel-campaign program plan, 2026-08-24 — no receipt behind the target half"),
+    ("Context scaling of the training gap", f"at matched tokens/step, 2k -> 8k (4x context): our step grows x{KERNEL_CAMPAIGN_20260824['ctx_growth_per_4x_battn']:.3f}, the transformer's x{KERNEL_CAMPAIGN_20260824['ctx_growth_per_4x_tf']:.3f}, so the ratio decays x{KERNEL_CAMPAIGN_20260824['ratio_decay_per_4x']:.3f} per 4x. The equal-token B4/T32,768 ~parity cell is RETIRED 2026-08-25 as a B4 occupancy artifact (it shared the retired growth residual); the flat per-token model puts the crossover at a PROJECTED T~16,900. Holding the old x0.802 decay constant instead would say x1.43 at 32k and a crossover near T~310,000 - that is the CONSERVATIVE extrapolation, because the transformer's quadratic attention term makes its per-4x growth rise with context while ours stays flat", "MEASURED (2 ratio points) + PROJECTION", "2026-08-24 GH200 megakernel measurement; 2k cell re-based 2026-08-25"),
+    ("Training CONTEXT MIX (reads the other way)", f"quoting one context for all of training is the pessimistic corner, and it was this model's old implicit assumption. Cost-weighted over a curriculum the training term flips from a DRAG to a CONTRIBUTOR: x{training_advantage_mix('legacy_short')['advantage']:.3f} at 100% 2k, x{training_advantage_mix('modern_standard')['advantage']:.2f} at a modern 8k/64k/256k mix, x{training_advantage_mix('long_context')['advantage']:.2f} long-context-heavy, x{training_advantage_mix('frontier_rl')['advantage']:.2f} with long RL rollouts. The mechanism: our per-token cost is FLAT in context and the transformer's GROWS, so long-context tokens dominate its bill as a token minority — 10% of tokens at 262k is 47% of its training cost. r(T) is MEASURED at 2k/8k and MODELED beyond; the curriculum SHARES are ILLUSTRATIVE and exposed as knobs (this repo carries no citation for any lab's recipe)", "MEASURED r(T) + ILLUSTRATIVE mix", "TRAIN_COST_FIT_20260824, TRAINING_CURRICULA, training_advantage_mix()"),
+    ("Long-context training memory (EXCLUDED, runs our way)", f"at 262k+ the transformer additionally pays sequence-parallelism and activation-memory costs that an O(1) recurrent state does not: its KV grows at {KV_MB_PER_TOKEN_PER_STREAM * 1024:.0f} KB per token of context per stream, which is what forces sharding, ring/Ulysses attention and their communication overhead. Our own measurement shows the asymmetry in the small: peak training memory grew only x{KERNEL_CAMPAIGN_20260824['mem_ratio_8k'] / KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} relative to the transformer's from 2k to 8k (x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} -> x{KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f}), i.e. the ratio is FLAT-to-falling in context while the absolute gap the transformer must shard grows. NOT in the cost model — the training advantage above counts FLOPs/step-time only, so the direction of this omission is CONSERVATIVE (it understates us at long context). Quantifying it needs a multi-GPU long-context training receipt we do not have", "DIRECTIONAL — measured components, not a costed lever", "KERNEL_CAMPAIGN_20260824 mem_ratio_2k/8k; KV_MB_PER_TOKEN_PER_STREAM"),
     ("$/GPU-hour", "$2.50 (H100 rent, neocloud/committed mid; ladder 2.00-3.50)", "ASSUMPTION", "this file's CostLadder row — unchanged rate basis"),
     ("Utilization", "85%", "ASSUMPTION", "same value as the ladder's owned-TCO cross-check"),
     ("Context-length mix", "headline quoted at 262k (a measured decode cell); table sweeps 4k-1M. The decode lever crosses 1 at ~29,800 tokens and BELOW that the transformer serves more tokens per GPU-second than we do — stated on every surface", "ASSUMPTION", "serving_cost_curve, decode_throughput_ratio"),
@@ -887,7 +1385,7 @@ SERVING_TRAINING_ASSUMPTIONS = [
     ("Transformer KV wall", "197 KB per token of context per stream — 51.5 GB for one 262,144-token stream, a 2nd stream OOMs a 96 GB card, and 16 streams OOM it at 32,768 tokens. Its retired 88.5 per-token decode cost was inflated by a growing-KV re-planning harness artifact; the traced figure is 14.92 GPU-busy at 262k", "MEASURED", "deck_decode_d2048_bf16_gh200_20260814.json rows[transformer]"),
     ("Training throughput at 8 GPUs", "x5.15 (bAttention, fwd+bwd) vs x3.70 (transformer Ulysses best, forward-only) at matched 16-in-flight load -> x1.39; x6.27 at 256 in flight -> x1.70", "MEASURED", "derived.json matched_load_curve, scaling_1to8_best"),
     ("Memory walls (component scope)", "64k-token sequence: 30.9 GB (fits 1 GPU) vs OOM at 78.4 GB attempted; pipeline stage 9.05 GB flat vs GPipe 43.3 GB", "MEASURED", "derived.json pipeline_feasibility, pipeline_memory_asymmetry"),
-    ("Compute lever (flop_factor)", "cross-family prefill, bf16, 1xH100, parameter counts exactly matched, block scope (1 layer, batch 16): TF/bAttention 4.02 at d512/1M, 3.83 at d1024/1M, 2.01 at d2048/262k. Short context favours the transformer and is stated so", "MEASURED", "matched_d{512,1024,2048}_h100.json (2026-07-21)"),
+    ("Compute lever (flop_factor)", "cross-family prefill, bf16, 1xH100, parameter counts exactly matched, block scope (1 layer, batch 16): TF/bAttention 4.02 at d512/1M, 3.83 at d1024/1M, 2.01 at d2048/262k. Short context favours the transformer and is stated so. NOTE: measured on the PRE-CAMPAIGN kernels and not re-run since 2026-08-24, so the TODAY lever is conservative; the realized x3.452 sits in CEILING_PREFILL_SPEEDUP, not here", "MEASURED", "matched_d{512,1024,2048}_h100.json (2026-07-21)"),
     ("Compute, fp32 lane (scope reference)", "the d2048/24-layer fp32 sweep gives 7.91 at 262k at full-model scope. No fp32 FlashAttention kernel exists, so that lane runs mem-efficient attention on the transformer and the owned arm is fp16 internally; params 16.7% apart. Full model in bf16 has not been run", "LABEL", "deck_speed_scaling_d2048_h100_20260803.json sdpa_fp32_backend_probe + last_route_attestation"),
     ("16-bit IO (training)", "same-arch GH200 gate at d1536: fp16 x1.185 step time and -17.5% peak memory, bf16 x1.171 and -20.6%; quality deltas +0.001 to +0.004 from the gate's smaller vehicle. Reported on its own; not an input to the compute lever", "MEASURED", "receipts/io16_gate_20260809.md (2026-08-09)"),
     ("Quality parity at 70B", "transformer needs x4.1 params [2.2-7.7] or x1.7 tokens [1.33-2.10, beta=0.28 assumption]; crossover N* ~321M = the top measured rung", "PROJECTION", "derived.json quality_fit.ref_70B, parity_cost"),
@@ -998,6 +1496,131 @@ def global_estimate(total, g):
     return out
 
 
+# ---- the "$159B/yr" headline family, pinned ------------------------------------
+# The headline is MODEL-COMPUTED -- it is compute_year(GLOBALS, COMPANIES, 'fy25')
+# rolled to TOTAL -- but every external surface (deck YAMLs, app copy, workbook
+# prose) quotes it as a hand-transcribed literal. headline_family() recomputes it
+# and the assert below is the guard, so a lever change can never leave the decks
+# saying a number this file no longer produces.
+#
+# RE-VERIFIED 2026-08-24 against the re-based kernel levers: the TODAY family did
+# NOT move, and the reason is structural. WORKLOAD['train_share'] defaults to 0,
+# so the headline is a pure SERVING claim, and the 2026-08-24 re-base touched only
+# the TRAINING and CEILING levers. Both serving inputs are untouched -- mem_factor
+# 100, and flop_factor x9.24 whose x4.02 prefill anchor was deliberately not re-run
+# (see the module docstring: conservative by construction). What did move:
+#
+#   TRAIN_ADVANTAGE_SHORT_SEQ  1/9.6 -> 1/2.226. Training remains a DRAG on the
+#       blend at every share -- x0.449 on its own against the serving blend's
+#       x2.19 -- so switching it on still LOWERS the headline: at train_share 0.2
+#       the blend is x1.23 (was x0.44) and FY25 reads $153B, not $159B. What
+#       flipped sign is where the BLEND crosses 1, i.e. the break-even training
+#       share, ~0.06 -> ~0.30. That is a sensitivity knob, not the headline.
+#   RE-BASED AGAIN 2026-08-25 (3): TRAIN_ADVANTAGE_SHORT_SEQ 1/2.226 -> 1/1.934
+#       (x0.449 -> x0.517 on its own); at train_share 0.2 the legacy_short
+#       blend is x1.33 and FY25 reads $154.15B, still below serving-only $159B
+#       (still dilutes -- legacy_short alone never crosses the serving blend).
+#   CEILING_FLOP_LEVER  22.09 -> 20.49, cost-weighted ceiling x41.48 -> x39.18.
+#       FY25 ceiling cut $163.04B -> $162.80B, still "~$163B" at quoted rounding.
+#       The only quoted value that moved is the Today->Ceiling dollar gap,
+#   RE-BASED AGAIN 2026-08-25 (3): CEILING_FLOP_LEVER 20.49 -> 24.77, cost-
+#       weighted ceiling x39.18 -> x45.15 (2k receipt re-base, see the top
+#       docstring paragraph). FY25 ceiling cut $162.80B -> $163.37B, still
+#       "~$163B" -- every quoted dollar figure stays within tolerance; only
+#       ceiling_reduction (39.0 -> update to 45.1) and ceiling_dollar_gap_pct
+#       (2.5 -> update to 2.85) move in HEADLINE_QUOTED_20260824 below.
+#       2.65% -> 2.50%; surfaces that said "~3%" now say "~2.5%".
+def headline_with_training(curriculum, train_share, g=None, companies=None):
+    """The FY25 headline once TRAINING enters the lever at a given context mix.
+
+    Every surface that shows the training scenarios reads this, so the app, the
+    workbook, the chart and the deck copy cannot quote different dollars. Returns
+    the training advantage, the blended lever, the reduction and the FY25 cut.
+
+    Read the `raises_headline` flag before telling the story: a curriculum crossing
+    x1 makes training stop being a LOSS, but the blended lever is a cost-weighted
+    harmonic mean, so training only RAISES the dollar headline once it beats the
+    SERVING advantage (x2.19). Between x1 and x2.19 training is profitable and
+    still dilutive to this particular number.
+    """
+    g = g if g is not None else GLOBALS
+    companies = companies if companies is not None else COMPANIES
+    w = workload_compute_advantage(
+        {"train_share": train_share, "train_curriculum": curriculum}
+    )
+    lever = w["blended"] * param_matching_gain(DECK_DEPLOYMENT_SCALE)
+    gg = dict(g, flop_factor=lever)
+    _, t25 = compute_year(gg, companies, "fy25")
+    baseline = compute_year(g, companies, "fy25")[1]["spend_cut"]
+    return {
+        "curriculum": w["train_curriculum"],
+        "train_share": float(train_share),
+        "train_advantage": w["train_advantage"],
+        "effective_step_ratio": 1.0 / w["train_advantage"],
+        "blended_lever": w["blended"],
+        "flop_factor": lever,
+        "reduction": reduction_factor(gg),
+        "fy25_spend_cut": t25["spend_cut"],
+        "fy25_capitalized": t25["capitalized"],
+        "delta_vs_serving_only": t25["spend_cut"] - baseline,
+        "raises_headline": w["train_advantage"] > w["serving"],
+    }
+
+
+def headline_family(g=None, companies=None):
+    """Recompute every value in the quoted headline family. All $B."""
+    g = g if g is not None else GLOBALS
+    companies = companies if companies is not None else COMPANIES
+    gc = dict(g, flop_factor=CEILING_FLOP_LEVER)
+    _, t25 = compute_year(g, companies, "fy25")
+    _, t26 = compute_year(g, companies, "fy26")
+    _, c25 = compute_year(gc, companies, "fy25")
+    return {
+        "fy25_spend_cut": t25["spend_cut"],
+        "fy25_capitalized": t25["capitalized"],
+        "fy25_pct_cut": t25["pct_cut"],
+        "fy25_net_arch": t25["net_arch"],
+        "fy26_spend_cut": t26["spend_cut"],
+        "fy26_capitalized": t26["capitalized"],
+        "global_fy25_capitalized": global_estimate(t25, g)["capitalized"],
+        "global_fy26_capitalized": global_estimate(t26, g)["capitalized"],
+        "fy25_ceiling_spend_cut": c25["spend_cut"],
+        "today_reduction": reduction_factor(g),
+        "ceiling_reduction": reduction_factor(gc),
+        "ceiling_dollar_gap_pct": 100.0 * (c25["spend_cut"] / t25["spend_cut"] - 1.0),
+    }
+
+
+# (key, what the surfaces say, tolerance) — tolerance is the quoted rounding.
+HEADLINE_QUOTED_20260824 = (
+    ("fy25_spend_cut", 159.0, 0.5),          # "~$159B/yr"
+    ("fy25_capitalized", 2600.0, 50.0),      # "~$2.6T capitalized at 6%"
+    ("fy25_pct_cut", 0.42, 0.005),           # "~42% of AI spend cut"
+    # "burn shrinks to ~ -$136B/yr". Computes to -136.54, and the surfaces quote
+    # the difference of the ROUNDED components (-295 + 159 = -136) rather than the
+    # rounded difference (-137), so that the slide's waterfall adds up. Tolerance
+    # is 1.0 to allow that one-unit narrative rounding, deliberately.
+    ("fy25_net_arch", -136.0, 1.0),
+    ("fy26_spend_cut", 366.0, 0.5),          # "FY26 r/r ~$366B/yr"
+    ("fy26_capitalized", 6100.0, 50.0),      # "~$6.1T"
+    ("global_fy25_capitalized", 3300.0, 50.0),   # "global est ~$3.3T FY25"
+    ("global_fy26_capitalized", 7600.0, 50.0),   # "~$7.6T FY26"
+    ("fy25_ceiling_spend_cut", 163.0, 0.5),  # "Ceiling: ~$163B FY25"
+    ("today_reduction", 20.0, 0.5),          # "~20x cost-weighted"
+    ("ceiling_reduction", 45.1, 0.5),        # "~45x" (RE-BASED AGAIN 2026-08-25 (3); was 39.0)
+    ("ceiling_dollar_gap_pct", 2.85, 0.25),  # "the two differ only ~2.85% in dollars" (was 2.5)
+)
+
+_HEADLINE = headline_family()
+for _k, _quoted, _tol in HEADLINE_QUOTED_20260824:
+    assert abs(_HEADLINE[_k] - _quoted) <= _tol, (
+        f"headline drift: {_k} computes to {_HEADLINE[_k]:.4f} but the decks, the app "
+        f"and the workbook quote {_quoted} (tolerance {_tol}). Re-quote every surface "
+        f"listed in the block above before changing a lever."
+    )
+del _k, _quoted, _tol
+
+
 if __name__ == "__main__":
     print("== Serving at long context — $/1M generated tokens, one 8xH100 box ==")
     print("   (component scope; decode from the 2026-08-14 MEASURED per-GPU cells, transformer granted")
@@ -1040,6 +1663,28 @@ if __name__ == "__main__":
         f"PLUS quality-parity PROJECTION at 70B: x{MEASURED['parity_70B_param_multiple']:.1f} params "
         f"or x{MEASURED['parity_70B_token_multiple']:.2f} tokens (beta=0.28 assumption) =="
     )
+    print("== TRAINING is a CURRICULUM, not one context: r(T) MEASURED to 32k, MODELED beyond ==")
+    print(f"    r(T):  " + "  ".join(
+        f"{T // 1024}k={training_step_ratio(T):.2f}" for T in (2048, 8192, 32768, 262144, 1048576)))
+    print(f"    the conservative constant-decay bound instead says  " + "  ".join(
+        f"{T // 1024}k={training_step_ratio(T, mode='constant_decay'):.2f}"
+        for T in (32768, 262144, 1048576)))
+    print(f"    flat per-token model: r(32,768)={training_step_ratio(32768):.3f}; "
+          f"crossover T~{training_context_crossover():,.0f} (PROJECTED, B4 parity cell retired as artifact)")
+    _thr = training_helps_headline_threshold()
+    for _name, _spec in TRAINING_CURRICULA.items():
+        _a = training_advantage_mix(_name)
+        _h = headline_with_training(_name, 0.20)
+        print(f"    {_name:16s} adv x{_a['advantage']:5.2f}  r_eff x{_a['effective_step_ratio']:5.3f}  "
+              f"-> FY25 ${_h['fy25_spend_cut']:6.2f}B at a 20% training share "
+              f"({_h['delta_vs_serving_only']:+.2f} vs serving-only; "
+              f"{'RAISES' if _h['raises_headline'] else 'dilutes'})   [{_spec['status']}]")
+        print("        " + "  ".join(
+            f"{g['ctx'] // 1024}k: {g['token_share']:.0%} of tokens -> {g['tf_cost_share']:.0%} of TF cost"
+            for g in _a["rungs"]))
+    print(f"    NOTE: crossing x1 makes training profitable; RAISING the headline needs it to beat the "
+          f"SERVING advantage x{_thr:.2f}, since the blend is a cost-weighted harmonic mean.")
+    print("    Curriculum token shares are ILLUSTRATIVE knobs -- no lab's recipe is cited or invented.")
     for yr in ("fy25", "fy26"):
         rows, tot = compute_year(GLOBALS, COMPANIES, yr)
         glob = global_estimate(tot, GLOBALS)
