@@ -1442,7 +1442,26 @@ CAMPAIGN_LANDED_20260831 = {
     # hyperscaler compute demand ~60-70% inference -> training 30-40%.
     # Band 0.30-0.45, midpoint taken. Raising the share is the CONSERVATIVE
     # direction (training is the weaker lever).
-    "train_share": 0.35,             # fraction of accelerator cost spent training (analyst band 0.30-0.45)
+    "train_share": 0.35,             # DEFAULT fraction of accelerator cost spent training (analyst band 0.30-0.45); per-company refinement below takes precedence in the landed charts
+    # Per-company training shares (2026-08-31 (5) refinement). ESTIMATES: no firm
+    # discloses this split; anchored on the economy-wide 0.30-0.45 band and the
+    # structural record -- Stargate's dedicated OpenAI TRAINING datacenters run
+    # on OCI, not Azure (Oracle training-heavy, Microsoft inference-tilted:
+    # Azure serves the API/Copilot fleet while OpenAI frontier training migrates
+    # to Stargate sites); Meta's FY26 capex raise is driven by superintelligence
+    # training clusters on top of its ads-ranking inference estate; Alphabet
+    # trains Gemini on TPU but runs the largest inference estate (Search/ads);
+    # Amazon hosts Anthropic training (Trainium/Rainier) inside a broad
+    # inference-renting AWS mix; SpaceX is a greenfield build, early workloads
+    # training-heavy. Accel-capex-weighted mean ~0.37 (inside the analyst band).
+    "train_share_by_company": {
+        "Microsoft": 0.25,
+        "Alphabet": 0.35,
+        "Amazon": 0.35,
+        "Meta": 0.45,
+        "Oracle": 0.55,
+        "SpaceX": 0.50,
+    },
     "train_curriculum": "modern_standard",  # the mix the training term is cost-weighted over
     "receipt_needed": "aggregate decode throughput on the post-edit kernel: tok/s/GPU at "
                       "d2048 over a stream sweep (1/8/64) x context sweep (2k/32k/262k). "
@@ -1526,6 +1545,42 @@ def campaign_landed_blended_lever(train_share=None, curriculum=None):
         return CAMPAIGN_LANDED_FLOP_LEVER
     adv = campaign_landed_train_advantage(cur)
     return 1.0 / (ts / adv + (1.0 - ts) / CAMPAIGN_LANDED_FLOP_LEVER)
+
+
+def campaign_landed_company_rows(year):
+    """Per-company rows + TOTAL for the landed scenario with each company's own
+    training share (train_share_by_company; falls back to the global default).
+    Each company gets its own blended flop lever, so training-heavy spenders
+    (Oracle, SpaceX, Meta) see a smaller cut fraction than inference-tilted
+    ones (Microsoft)."""
+    c = CAMPAIGN_LANDED_20260831
+    shares = c.get("train_share_by_company", {})
+    rows = []
+    for comp in COMPANIES:
+        ts = shares.get(comp["name"], c["train_share"])
+        g = dict(GLOBALS, flop_factor=campaign_landed_blended_lever(ts))
+        rows.append(compute_company(comp, g, year))
+    keys = ["total", "ai_capex", "accel", "ai_opex", "ai_rev", "net_now",
+            "capex_avoided", "opex_saved", "spend_cut", "net_arch", "capitalized"]
+    total = {k: sum(r[k] for r in rows) for k in keys}
+    total["name"] = f"TOTAL ({len(rows)})"
+    spend = total["ai_capex"] + total["ai_opex"]
+    total["pct_cut"] = total["spend_cut"] / spend if spend else 0.0
+    total["accel_pct"] = total["accel"] / total["total"] if total["total"] else 0.0
+    return rows, total
+
+
+def campaign_landed_weighted_train_share(year="fy26"):
+    """Accelerator-capex-weighted mean of the per-company training shares."""
+    c = CAMPAIGN_LANDED_20260831
+    shares = c.get("train_share_by_company", {})
+    g = dict(GLOBALS)
+    num = den = 0.0
+    for comp in COMPANIES:
+        accel = compute_company(comp, g, year)["accel"]
+        num += accel * shares.get(comp["name"], c["train_share"])
+        den += accel
+    return num / den if den else c["train_share"]
 
 
 def campaign_landed_reduction(train_share=None, curriculum=None):
