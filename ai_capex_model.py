@@ -1434,8 +1434,15 @@ CAMPAIGN_LANDED_20260831 = {
     "train_step_ratio_2k_target": 1.3,  # x1.3 at T=2,048, improving with context (flat per-token)
     # How training enters the DOLLARS (2026-08-31 (2) user ruling: training is a
     # big piece of accelerator cost, so the landed training targets move the
-    # dollar estimates, not just the labels). Both knobs ILLUSTRATIVE:
-    "train_share": 0.20,             # fraction of accelerator cost spent training
+    # dollar estimates, not just the labels). Share is ANALYST-GROUNDED, mix is
+    # ILLUSTRATIVE:
+    # train_share sources (all 2026): Gartner -- inference 55% of AI-optimized
+    # IaaS spend ($23.3B vs $19B training) -> training ~45%; Deloitte --
+    # inference 2/3 of all AI compute (was 1/2 in 2025) -> training ~33%;
+    # hyperscaler compute demand ~60-70% inference -> training 30-40%.
+    # Band 0.30-0.45, midpoint taken. Raising the share is the CONSERVATIVE
+    # direction (training is the weaker lever).
+    "train_share": 0.35,             # fraction of accelerator cost spent training (analyst band 0.30-0.45)
     "train_curriculum": "modern_standard",  # the mix the training term is cost-weighted over
     "receipt_needed": "aggregate decode throughput on the post-edit kernel: tok/s/GPU at "
                       "d2048 over a stream sweep (1/8/64) x context sweep (2k/32k/262k). "
