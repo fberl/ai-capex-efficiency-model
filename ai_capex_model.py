@@ -1488,7 +1488,7 @@ CAMPAIGN_LANDED_20260831 = {
 
 
 def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w=None,
-                               n_tf=None):
+                               n_tf=None, prefill_speedup=None):
     """The campaign-landed compute lever: the Today lever's structure (serving
     blend x fit-derived equal-quality parameter ratio) with BOTH our serving
     legs at kernel maturity (2026-08-31 (6) user ruling): decode replaced by the
@@ -1509,8 +1509,12 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
     tf_dec_tps = econ["tf_tokens_per_s_box"]
     own_dec_tps = n_streams * 1000.0 / ms * gpus
     tf_pf_tps = prefill_tokens_per_s("transformer", ctx) * gpus
-    own_pf_tps = (prefill_tokens_per_s("bdm", ctx) * gpus
-                  * CEILING_PREFILL_SPEEDUP)  # prefill at maturity
+    # prefill_speedup: CEILING_PREFILL_SPEEDUP (default, maturity) or
+    # KERNEL_SPEEDUP_REALIZED_20260824 (the "current kernels" tier -- only the
+    # banked x3.936, no remaining target). Decode-dominated, so the two tiers
+    # differ only ~3% here.
+    pf = CEILING_PREFILL_SPEEDUP if prefill_speedup is None else float(prefill_speedup)
+    own_pf_tps = prefill_tokens_per_s("bdm", ctx) * gpus * pf
     tf_total = r / tf_pf_tps + 1.0 / tf_dec_tps
     own_total = r / own_pf_tps + 1.0 / own_dec_tps
     scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
@@ -1634,9 +1638,17 @@ def campaign_landed_blended_lever(train_share=None, curriculum=None, kernels="ma
     c = CAMPAIGN_LANDED_20260831
     ts = c["train_share"] if train_share is None else float(train_share)
     cur = curriculum or c["train_curriculum"]
-    # serving lever per kernel tier: mature = both legs at maturity; current =
-    # the Today quality-matched lever (measured blend x fit ratio).
-    serving = CAMPAIGN_LANDED_FLOP_LEVER if kernels == "mature" else GLOBALS["flop_factor"]
+    # serving lever per kernel tier (2026-09-01 user ruling: fold the banked
+    # results AND the aggregate-decode estimate into the current tier too --
+    # "our estimates have been pretty accurate"): mature = both legs at
+    # maturity; current = the SAME full-workload accounting with prefill at
+    # only the banked x3.936 (no remaining target). Both tiers carry the
+    # 2.5 ms x 64-stream decode ESTIMATE. The old frozen quality-matched
+    # x9.24 (GLOBALS["flop_factor"]) is no longer any tier's serving leg; it
+    # remains the measured-family basis.
+    serving = (CAMPAIGN_LANDED_FLOP_LEVER if kernels == "mature"
+               else campaign_landed_flop_lever(
+                   prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824))
     if ts <= 0:
         return serving
     adv = campaign_landed_train_advantage(cur, kernels=kernels)
