@@ -1425,8 +1425,18 @@ CAMPAIGN_LANDED_20260831 = {
     "streams_per_gpu": 64,
     # Training-side targets (label the scenario; the headline lever is a SERVING
     # claim with train_share=0, so these do not enter the dollars):
-    "train_mem_ratio_target": 1.0,   # TF training-memory parity
+    "train_mem_ratio_target": 1.0,   # TF training-memory parity. Path is real: banked
+                                     # 1.552 -> 1.361 (deadtape -1,736 MiB, 2026-08-30);
+                                     # gap identity says 83.2% of the remaining gap is
+                                     # transient-at-peak, the campaign's stated hunting
+                                     # ground. RISK: the pending TF-bar fairness ruling
+                                     # (lean-bwd fold) moves the goalpost to ~1.776.
     "train_step_ratio_2k_target": 1.3,  # x1.3 at T=2,048, improving with context (flat per-token)
+    # How training enters the DOLLARS (2026-08-31 (2) user ruling: training is a
+    # big piece of accelerator cost, so the landed training targets move the
+    # dollar estimates, not just the labels). Both knobs ILLUSTRATIVE:
+    "train_share": 0.20,             # fraction of accelerator cost spent training
+    "train_curriculum": "modern_standard",  # the mix the training term is cost-weighted over
     "receipt_needed": "aggregate decode throughput on the post-edit kernel: tok/s/GPU at "
                       "d2048 over a stream sweep (1/8/64) x context sweep (2k/32k/262k). "
                       "Turns this scenario's decode leg from ESTIMATE into MEASURED. Full "
@@ -1458,6 +1468,68 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
 
 
 CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 347.7 at the 64-stream / 2.5 ms targets
+
+
+def campaign_landed_train_ratio(ctx_tokens):
+    """r(T) with the campaign-landed TRAINING target: x1.3 at T=2,048, our
+    per-token cost flat (MEASURED flat, 2026-08-29/31 receipts), transformer
+    base + attn*T from the current fit. TARGET, not a receipt."""
+    f = TRAIN_COST_FIT_20260824
+    tf_2k = f["tf_base_ms_per_token"] + f["tf_attn_ms_per_token_sq"] * 2048.0
+    bdm_target = CAMPAIGN_LANDED_20260831["train_step_ratio_2k_target"] * tf_2k
+    return bdm_target / (f["tf_base_ms_per_token"]
+                         + f["tf_attn_ms_per_token_sq"] * float(ctx_tokens))
+
+
+def campaign_landed_train_crossover():
+    """Context where the landed training target reaches parity: T* where
+    tf(T) = 1.3 * tf(2,048). ~6,600 tokens on the current fit -- i.e. under the
+    targets we win training at 8k and above. TARGET-derived."""
+    f = TRAIN_COST_FIT_20260824
+    tf_2k = f["tf_base_ms_per_token"] + f["tf_attn_ms_per_token_sq"] * 2048.0
+    bdm_target = CAMPAIGN_LANDED_20260831["train_step_ratio_2k_target"] * tf_2k
+    return (bdm_target - f["tf_base_ms_per_token"]) / f["tf_attn_ms_per_token_sq"]
+
+
+def campaign_landed_train_advantage(curriculum="modern_standard"):
+    """Cost-weighted training advantage over a curriculum mix, at the landed
+    training target (x1.3 @ 2k, flat per-token). >1 = training contributes."""
+    spec = TRAINING_CURRICULA[curriculum]
+    f = TRAIN_COST_FIT_20260824
+    tf_2k = f["tf_base_ms_per_token"] + f["tf_attn_ms_per_token_sq"] * 2048.0
+    bdm_target = CAMPAIGN_LANDED_20260831["train_step_ratio_2k_target"] * tf_2k
+    tf_cost = sum((f["tf_base_ms_per_token"]
+                   + f["tf_attn_ms_per_token_sq"] * ctx) * share
+                  for ctx, share in spec["mix"])
+    own_cost = sum(bdm_target * share for _, share in spec["mix"])
+    return tf_cost / own_cost
+
+
+def campaign_landed_blended_lever(train_share=None, curriculum=None):
+    """The landed FLOP lever with TRAINING FOLDED IN (2026-08-31 (2) user
+    ruling: training is a big piece of the cost, so the landed targets move the
+    dollars). Harmonic blend of the serving lever (x348) and the landed
+    training target advantage over the curriculum mix. Defaults come from
+    CAMPAIGN_LANDED_20260831 (train_share 0.20, modern_standard -- both
+    ILLUSTRATIVE knobs, not measurements)."""
+    c = CAMPAIGN_LANDED_20260831
+    ts = c["train_share"] if train_share is None else float(train_share)
+    cur = curriculum or c["train_curriculum"]
+    if ts <= 0:
+        return CAMPAIGN_LANDED_FLOP_LEVER
+    adv = campaign_landed_train_advantage(cur)
+    return 1.0 / (ts / adv + (1.0 - ts) / CAMPAIGN_LANDED_FLOP_LEVER)
+
+
+def campaign_landed_reduction(train_share=None, curriculum=None):
+    """Cost-weighted reduction under the landed scenario, training folded in
+    (defaults: 20% share, modern mix -> ~29x). train_share=0 recovers the
+    serving-only ~140x; frontier_rl at 20% reads ~84x. The spread exists
+    because the training lever (x2.9 at the target) is far weaker than the
+    serving one (x348) -- Amdahl, as ever."""
+    lever = campaign_landed_blended_lever(train_share, curriculum)
+    g = GLOBALS
+    return 1.0 / (g["mem_share"] / g["mem_factor"] + (1 - g["mem_share"]) / lever)
 
 
 # One row per assumption, visible on every surface that renders the serving /
