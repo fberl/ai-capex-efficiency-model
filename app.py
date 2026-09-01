@@ -351,7 +351,9 @@ def totals_tab(comps, g):
 
     c1, c2, c4 = st.columns(3)
     c1.metric("Cost-weighted reduction", x1(reduction_factor(g)))
-    c2.metric(f"Net AI now ({len(comps)} cos, FY25)", f"{usd0(tot25['net_now'])}B/yr")
+    # "Now" = FY26 (2026-09-01 user correction: the FY25 -$295B read as far too
+    # small — the current-year burn is the FY26 estimate).
+    c2.metric(f"Net AI now ({len(comps)} cos, FY26)", f"{usd0(tot26['net_now'])}B/yr")
     c4.metric("% of AI spend cut (FY26)", pct(tot26["pct_cut"]))
     n1c, n2c, n3c = st.columns(3)
     n1c.metric("Net AI w/ our arch (FY25)", f"{usd0(tot25['net_arch'])}B/yr", delta=f"{usd0(tot25['spend_cut'])}B cut")
@@ -359,9 +361,9 @@ def totals_tab(comps, g):
     n3c.metric("Net AI w/ our arch (FY27 pred.)", f"{usd0(tot27['net_arch'])}B/yr", delta=f"{usd0(tot27['spend_cut'])}B cut")
     st.caption("FY27 = street-estimate capex (Morgan Stanley +57% path; Oracle's ~$70B is the only real FY27 guide) "
                "with ai_rev at the ×1.5 placeholder — prediction-grade, see per-company notes.")
-    verdict = ("AI flips **profitable** at these settings." if tot25["net_arch"] > 0
-               else f"FY25 AI burn shrinks from **{md_usd(-tot25['net_now'])}B** to **{md_usd(-tot25['net_arch'])}B**/yr "
-                    f"(spend cut **{md_usd(tot25['spend_cut'])}B**, ~{md_usd(tot25['capitalized'])}B capitalized).")
+    verdict = ("AI flips **profitable** at these settings." if tot26["net_arch"] > 0
+               else f"FY26 AI burn shrinks from **{md_usd(-tot26['net_now'])}B** to **{md_usd(-tot26['net_arch'])}B**/yr "
+                    f"(spend cut **{md_usd(tot26['spend_cut'])}B**, ~{md_usd(tot26['capitalized'])}B capitalized).")
     st.markdown(f"**{verdict}**")
     st.caption(f"The {len(comps)} named firms are a floor. GLOBAL estimate (named ≈ {g['named_share_of_global']:.0%} of "
                f"world AI capex): FY25 spend cut ~{md_usd(glob25['spend_cut'])}B → ~\\${glob25['capitalized'] / 1000:.1f}T "
