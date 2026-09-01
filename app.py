@@ -103,8 +103,12 @@ def sidebar_globals():
 
     s.subheader("Workload")
     st.session_state.setdefault("in_out_ratio", float(WORKLOAD["in_out_ratio"]))
-    st.session_state.setdefault("context_tokens", int(WORKLOAD["context_tokens"]))
-    st.session_state.setdefault("train_share", float(WORKLOAD["train_share"]))
+    # App defaults (2026-09-01 user ruling): E[context] 128k (matches the pinned
+    # fleet-context assumption behind the levers) and training share 35% — the
+    # model's WORKLOAD dict keeps its own defaults (train_share=0 is the
+    # measured serving-claim basis; do not move it there).
+    st.session_state.setdefault("context_tokens", 131072)
+    st.session_state.setdefault("train_share", 0.35)
     wl = {
         "in_out_ratio": s.number_input(
             "🟡 Input : output token ratio", min_value=0.1, max_value=1000.0, step=1.0,
@@ -154,8 +158,10 @@ def sidebar_globals():
     _today = max(1.0, float(campaign_landed_flop_lever(
         n_tf=_scale, prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)))
     _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale)))
-    TODAY_LABEL = f"Today — banked kernels + decode estimate (~×{_today:.0f})"
-    LANDED_LABEL = f"Ceiling — campaign landed, full workload at maturity (~×{_landed:.0f})"
+    # Labels per 2026-09-01 user ruling: plain "Today" / "Ceiling: optimized
+    # kernels" (no lever numbers in the picker; the caption below carries them).
+    TODAY_LABEL = "Today"
+    LANDED_LABEL = "Ceiling: optimized kernels"
     # 2026-09-01 user ruling: two scenarios only. The old prefill-only "Ceiling"
     # (CEILING_FLOP_LEVER = x28.2 -> ~50x) was a cruder subset of the same
     # maturity assumption and is retired from the picker; campaign-landed IS the
@@ -175,7 +181,7 @@ def sidebar_globals():
     def _apply_scenario():
         st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
 
-    s.radio("Scenario (sets the FLOPs lever)", list(scenarios), key="scenario",
+    s.radio("Scenario", list(scenarios), key="scenario",
             on_change=_apply_scenario)
     # Today is computed from the sliders above, so it has to track them on every
     # rerun, not only when the radio changes. Safe to write here because the
@@ -188,18 +194,8 @@ def sidebar_globals():
     s.caption(
         f"Both scenarios price the FULL workload — decode "
         f"{CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token × the measured "
-        f"64-stream cell (aggregate-decode ESTIMATE, receipt pending) × equal-quality parameter "
-        f"ratio ×{_gain:.2f} at {scale_label}. **Today** carries prefill at only the "
-        f"×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} already **measured** on the campaign "
-        f"(2026-09-01 re-base: banked results + the decode estimate folded in — the estimates "
-        f"have tracked). **Ceiling (campaign landed)** adds the remaining "
-        f"×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} **target** (the funded 8k-win gate) — "
-        f"decode-dominated, so the two differ only ~3%. "
-        f"The dollar cut moves little between scenarios **by design**: the cut "
-        f"is accel × (1−1/R) and saturates — they differ in the reduction "
-        f"(×{reduction_factor(dict(g, flop_factor=_today)):.0f} vs "
-        f"×{reduction_factor(dict(g, flop_factor=_landed)):.0f}) and the residual compute bill, "
-        f"not the headline. Derivation: Methodology tab."
+        f"64-stream cell (aggregate-decode ESTIMATE) × equal-quality parameter "
+        f"ratio ×{_gain:.2f} at {scale_label}."
     )
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
@@ -350,13 +346,19 @@ def econ_show(rows, tot, glob):
 def totals_tab(comps, g):
     rows25, tot25 = compute_year(g, comps, "fy25")
     rows26, tot26 = compute_year(g, comps, "fy26")
+    _, tot27 = compute_year(g, comps, "fy27")
     glob25, glob26 = global_estimate(tot25, g), global_estimate(tot26, g)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c4 = st.columns(3)
     c1.metric("Cost-weighted reduction", x1(reduction_factor(g)))
     c2.metric(f"Net AI now ({len(comps)} cos, FY25)", f"{usd0(tot25['net_now'])}B/yr")
-    c3.metric("Net AI w/ our arch (FY25)", f"{usd0(tot25['net_arch'])}B/yr", delta=f"{usd0(tot25['spend_cut'])}B cut")
-    c4.metric("% of AI spend cut", pct(tot25["pct_cut"]))
+    c4.metric("% of AI spend cut (FY26)", pct(tot26["pct_cut"]))
+    n1c, n2c, n3c = st.columns(3)
+    n1c.metric("Net AI w/ our arch (FY25)", f"{usd0(tot25['net_arch'])}B/yr", delta=f"{usd0(tot25['spend_cut'])}B cut")
+    n2c.metric("Net AI w/ our arch (FY26)", f"{usd0(tot26['net_arch'])}B/yr", delta=f"{usd0(tot26['spend_cut'])}B cut")
+    n3c.metric("Net AI w/ our arch (FY27 pred.)", f"{usd0(tot27['net_arch'])}B/yr", delta=f"{usd0(tot27['spend_cut'])}B cut")
+    st.caption("FY27 = street-estimate capex (Morgan Stanley +57% path; Oracle's ~$70B is the only real FY27 guide) "
+               "with ai_rev at the ×1.5 placeholder — prediction-grade, see per-company notes.")
     verdict = ("AI flips **profitable** at these settings." if tot25["net_arch"] > 0
                else f"FY25 AI burn shrinks from **{md_usd(-tot25['net_now'])}B** to **{md_usd(-tot25['net_arch'])}B**/yr "
                     f"(spend cut **{md_usd(tot25['spend_cut'])}B**, ~{md_usd(tot25['capitalized'])}B capitalized).")
