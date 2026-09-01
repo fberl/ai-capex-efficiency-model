@@ -6,12 +6,17 @@ never drift.
 
 Engine: a GPU is ~60% memory / ~40% compute by cost. The cost-weighted
 reduction is 1 / (mem_share/mem_factor + compute_share/flop_factor), floored
-by the less-reduced component (compute). Two scenarios (2026-08-17 ruling):
-TODAY = memory /100 + the quality-matched compute lever (~x9.24 at 1T) ->
-~20x; CEILING = memory /100 + the prefill-kernel-campaign lever
-(x4.02 measured x 7.03 campaign speedup = x28.2, CEILING_FLOP_LEVER) -> ~50x
-(RE-BASED 2026-08-29/31 onto the review-verdicts position of record, 2k clean-wall
-101.737 vs 59.268 ms; before that 2026-08-25 -> ~45x, 2026-08-24 -> ~39x).
+by the less-reduced component. Two scenarios (RE-BASED 2026-09-01, user ruling:
+the pre-campaign floor is obsolete — fold in the banked results and the
+aggregate-decode estimate, current numbers and upper bound only):
+TODAY = memory /100 + the full-workload lever with prefill at the BANKED
+x3.936 (campaign_landed_flop_lever(prefill_speedup=realized) ~x793 at 1T) ->
+~154x; CEILING = the same lever with prefill at the full x7.03 maturity
+factor (~x816) -> ~154x. Both carry the 2.5 ms/token x 64-stream aggregate-
+decode ESTIMATE (receipt pending) and both are memory-floored: the two differ
+~3% in the FLOPs lever and ~0.3% in reduction. The RETIRED pre-campaign
+scenarios (TODAY x9.24 -> ~20x, prefill-only CEILING x28.2 -> ~50x) survive
+below only as historical constants for un-re-based legacy surfaces.
 
 RE-BASED 2026-08-24 (kernels). The CEILING's campaign speedup used to be a flat
 x5.5 ASSUMPTION ("mid of the 5-6x target"). It is now MEASURED-realized x
@@ -132,7 +137,7 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 9.24,  # FLOPs reduction (x) — the TODAY lever: measured workload blend x2.19 (10:1 in:out, 64k context) x fit-derived equal-quality parameter ratio x4.22 at 1T = COMPUTE_LEVER_20260814 (cross-checked at import). CEILING is CEILING_FLOP_LEVER = 28.24 (measured prefill x4.02 x 7.03 campaign speedup: x3.936 MEASURED-realized, 2k cell re-based 2026-08-29, x x1.786 TARGET-remaining to 8k parity). Measured cluster TRAINING throughput is x1.39–x1.70 (see MEASURED)
+    "flop_factor": 793.21,  # FLOPs reduction (x) — the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -1397,13 +1402,14 @@ def serving_cost_curve(ctxs=(4096, 16384, 32768, 65536, 131072, 262144, 1048576)
 _check_param_matching_curve()
 _check_train_cost_fit_validation()
 _check_curriculum_degenerate_case()
+# RETIRED 2026-09-01 (user ruling): the pre-campaign x9.24 quality-matched
+# composite is no longer any scenario's lever — it was measured on kernels that
+# no longer exist. Kept defined ONLY because un-re-based legacy chart builders
+# (build_ai_economics_measured.py, export_ai_economics_slide_pptx.py) still
+# reference it; do not quote it on any surface. GLOBALS["flop_factor"] is now
+# pinned to the campaign-landed Today lever — see the assert after
+# CAMPAIGN_LANDED_FLOP_LEVER below.
 COMPUTE_LEVER_20260814 = quality_matched_compute_lever()
-# GLOBALS carries the TODAY lever as its default; it must stay pinned to the
-# computed quality-matched value so no surface quotes a stale number.
-assert abs(GLOBALS["flop_factor"] - COMPUTE_LEVER_20260814) < 0.05, (
-    f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
-    f"quality-matched lever {COMPUTE_LEVER_20260814:.4f}"
-)
 
 
 # ---- CAMPAIGN-LANDED scenario (2026-08-31 ruling) ------------------------------
@@ -1521,7 +1527,16 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
     return (tf_total / own_total) * param_matching_gain(scale)
 
 
-CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 347.7 at the 64-stream / 2.5 ms targets
+CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 815.6 at the 64-stream / 2.5 ms targets, 128k E[context]
+# The TODAY lever (2026-09-01 re-base): same full-workload accounting with
+# prefill at only the BANKED x3.936. GLOBALS carries it as the default
+# flop_factor; the assert keeps every surface quoting what this file computes.
+TODAY_FLOP_LEVER_20260901 = campaign_landed_flop_lever(
+    prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)
+assert abs(GLOBALS["flop_factor"] - TODAY_FLOP_LEVER_20260901) < 0.05, (
+    f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
+    f"Today lever {TODAY_FLOP_LEVER_20260901:.4f}"
+)
 
 
 def campaign_landed_train_ratio(ctx_tokens):
@@ -1709,7 +1724,7 @@ def campaign_landed_reduction(train_share=None, curriculum=None, kernels="mature
 # training numbers (app tab, workbook sheet, __main__ print). status is one of
 # MEASURED / PROJECTION / ASSUMPTION.
 SERVING_TRAINING_ASSUMPTIONS = [
-    ("Compute lever (economics slide)", f"x{COMPUTE_LEVER_20260814:.2f} = the x{workload_compute_advantage()['blended']:.2f} MEASURED serving blend x the x{param_matching_gain(DECK_DEPLOYMENT_SCALE):.2f} FIT-DERIVED equal-quality parameter ratio at trillion scale", "MEASURED x PROJECTION", "workload_compute_advantage() x quality_matched_compute_lever(); receipts derived.json + quality_fit_v4.json"),
+    ("Compute lever (Today, 2026-09-01 re-base)", f"x{campaign_landed_flop_lever(prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824):.0f} = full-workload serving lever (decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the BANKED x{KERNEL_SPEEDUP_REALIZED_20260824:.2f}) x the x{param_matching_gain(DECK_DEPLOYMENT_SCALE):.2f} FIT-DERIVED equal-quality ratio at trillion scale; Ceiling = same at the full x{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (x{CAMPAIGN_LANDED_FLOP_LEVER:.0f})", "ESTIMATE x PROJECTION", "campaign_landed_flop_lever(); aggregate-decode receipt PENDING (decode_aggregate_receipt_20260831_instructions.md)"),
     ("Equal-quality parameter matching", "sealed 2026-08-14 refit, 4 rungs per family (47M-663M params): the fits cross at 392M and bAttention then matches the transformer fit's quality on 84.2% of the params at 1B, 55.2% at 10B, 36.2% at 100B, 23.7% at 1T, 15.5% at 10T. The receipt's own words: 'a projection of the two fits, not a measurement'", "PROJECTION", "quality_fit_v4.json param_matching; fits over the sealed rope-convention ladder"),
     ("Single-GPU training step (AGAINST us)", f"RE-BASED 2026-08-24: on one GH200, single layer, fwd+bwd, bf16, checkpointing off both arms, against a MODERN transformer block (24Q/4KV, head_dim 256, RoPE 64, gated attention), a bAttention step costs x{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f} MORE at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_ms_2k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_2k']:.1f} ms/step) and x{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f} at T=8,192. It read x6.116 (400.4 ms) the same morning and x6.46 on the older d1536/27L fp16 601-step receipt. Fwd x1.82, bwd x2.35. Training is still excluded from the serving claim, but the gap is now a kernel-program line item with a funded gate, not a structural loss", "MEASURED", "2026-08-24 GH200 megakernel measurement; prior: dtype_trio_v4.json rows[fp16]"),
     ("Training PEAK MEMORY (AGAINST us)", f"x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB) and x{KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f} at T=8,192, down from x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f} the same morning. This is TRAINING peak memory and is NOT the mem_factor lever, which is SERVING state (O(1) recurrent state vs O(T) KV cache) and is unaffected. It is not an input to the cost model; it caps per-GPU batch density", "MEASURED", "2026-08-24 GH200 megakernel measurement"),
@@ -1914,7 +1929,9 @@ def headline_family(g=None, companies=None):
     """Recompute every value in the quoted headline family. All $B."""
     g = g if g is not None else GLOBALS
     companies = companies if companies is not None else COMPANIES
-    gc = dict(g, flop_factor=CEILING_FLOP_LEVER)
+    # Ceiling = the campaign-landed maturity lever (2026-09-01 re-base; the
+    # prefill-only CEILING_FLOP_LEVER is retired from the headline family).
+    gc = dict(g, flop_factor=CAMPAIGN_LANDED_FLOP_LEVER)
     _, t25 = compute_year(g, companies, "fy25")
     _, t26 = compute_year(g, companies, "fy26")
     _, c25 = compute_year(gc, companies, "fy25")
@@ -1935,27 +1952,29 @@ def headline_family(g=None, companies=None):
 
 
 # (key, what the surfaces say, tolerance) — tolerance is the quoted rounding.
-HEADLINE_QUOTED_20260824 = (
-    ("fy25_spend_cut", 159.0, 0.5),          # "~$159B/yr"
-    ("fy25_capitalized", 2600.0, 50.0),      # "~$2.6T capitalized at 6%"
-    ("fy25_pct_cut", 0.42, 0.005),           # "~42% of AI spend cut"
-    # "burn shrinks to ~ -$136B/yr". Computes to -136.54, and the surfaces quote
-    # the difference of the ROUNDED components (-295 + 159 = -136) rather than the
-    # rounded difference (-137), so that the slide's waterfall adds up. Tolerance
-    # is 1.0 to allow that one-unit narrative rounding, deliberately.
-    ("fy25_net_arch", -136.0, 1.0),
-    ("fy26_spend_cut", 366.0, 0.5),          # "FY26 r/r ~$366B/yr"
-    ("fy26_capitalized", 6100.0, 50.0),      # "~$6.1T"
-    ("global_fy25_capitalized", 3300.0, 50.0),   # "global est ~$3.3T FY25"
-    ("global_fy26_capitalized", 7600.0, 50.0),   # "~$7.6T FY26"
-    ("fy25_ceiling_spend_cut", 163.7, 0.5),  # "Ceiling: ~$164B FY25" (2026-08-29 re-anchor; was 163.0)
-    ("today_reduction", 20.0, 0.5),          # "~20x cost-weighted"
-    ("ceiling_reduction", 49.6, 0.5),        # "~50x" (2026-08-29 re-anchor: realized x3.94; was 45.1)
-    ("ceiling_dollar_gap_pct", 3.1, 0.25),   # "the two differ only ~3% in dollars" (was 2.85)
+# RE-QUOTED 2026-09-01: the whole family re-based onto the banked-kernels +
+# aggregate-decode-estimate levers (Today x793 / Ceiling x816). The previous
+# family (159.0 / 2600 / 0.42 / -136 / 366 / 6100 / 3300 / 7600 / 163.7 /
+# 20.0 / 49.6 / 3.1, HEADLINE_QUOTED_20260824) is RETIRED with the x9.24 basis.
+HEADLINE_QUOTED_20260901 = (
+    ("fy25_spend_cut", 166.0, 0.5),          # "~$166B/yr"
+    ("fy25_capitalized", 2770.0, 50.0),      # "~$2.8T capitalized at 6%"
+    ("fy25_pct_cut", 0.443, 0.005),          # "~44% of AI spend cut"
+    # "burn shrinks to ~ -$129B/yr". Computes to -129.39; tolerance 1.0 allows
+    # the waterfall's rounded-components arithmetic (-295 + 166 = -129).
+    ("fy25_net_arch", -129.0, 1.0),
+    ("fy26_spend_cut", 382.0, 0.5),          # "FY26 r/r ~$382B/yr"
+    ("fy26_capitalized", 6370.0, 50.0),      # "~$6.4T"
+    ("global_fy25_capitalized", 3460.0, 50.0),   # "global est ~$3.5T FY25"
+    ("global_fy26_capitalized", 7960.0, 50.0),   # "~$8.0T FY26"
+    ("fy25_ceiling_spend_cut", 166.0, 0.5),  # Ceiling within rounding of Today (saturation)
+    ("today_reduction", 153.7, 0.5),         # "~x154 cost-weighted, memory-floored"
+    ("ceiling_reduction", 154.1, 0.5),       # "~x154"
+    ("ceiling_dollar_gap_pct", 0.0, 0.25),   # "within rounding in dollars"
 )
 
 _HEADLINE = headline_family()
-for _k, _quoted, _tol in HEADLINE_QUOTED_20260824:
+for _k, _quoted, _tol in HEADLINE_QUOTED_20260901:
     assert abs(_HEADLINE[_k] - _quoted) <= _tol, (
         f"headline drift: {_k} computes to {_HEADLINE[_k]:.4f} but the decks, the app "
         f"and the workbook quote {_quoted} (tolerance {_tol}). Re-quote every surface "
