@@ -44,7 +44,7 @@ from ai_capex_model import (  # single source of truth for defaults
     training_step_ratio, training_context_crossover, training_advantage_mix,
     training_helps_headline_threshold, headline_with_training,
     TRAINING_CURRICULA, KV_MB_PER_TOKEN_PER_STREAM,
-    serving_context_sensitivity,
+    serving_context_sensitivity, compute_year,
 )
 
 INPUT_FILL = PatternFill(
@@ -684,8 +684,20 @@ def build_totals(tot, tabs):
     put(tot, fr, 5, f"={nn26}", fmt="#,##0", border=True, fill=SUB_FILL)
     put(tot, fr, 6, f"={cut26}", fmt="#,##0", border=True, fill=SUB_FILL)
     put(tot, fr, 7, f"={arch26}", fmt="#,##0", border=True, fill=SUB_FILL)
+    # FY27 prediction row (2026-09-01 user request): STATIC values at model
+    # defaults (compute_year on the fy27 street-estimate capex — Morgan Stanley
+    # +57% path; Oracle's ~$70B is the only real FY27 guide). Company tabs carry
+    # no fy27 formula chain, so this row does not recompute with the levers —
+    # rebuild the workbook to refresh.
+    fr27 = fr + 1
+    _, _tot27 = compute_year(GLOBALS, COMPANIES, "fy27")
+    put(tot, fr27, 1, "FY2027 (STREET-EST prediction, static)", bold=True)
+    put(tot, fr27, 5, _tot27["net_now"], fmt="#,##0", border=True, fill=SUB_FILL)
+    put(tot, fr27, 6, _tot27["spend_cut"], fmt="#,##0", border=True, fill=SUB_FILL)
+    put(tot, fr27, 7, _tot27["net_arch"], fmt="#,##0", border=True, fill=SUB_FILL)
+    put(tot, fr27, 8, _tot27["pct_cut"], fmt="0%", border=True, fill=SUB_FILL)
 
-    sb = fr + 2
+    sb = fr27 + 2
     header(tot, sb, "SAVINGS BREAKDOWN — the spend cut, split", span=8)
     put(tot, sb + 1, 1, "Cost-weighted reduction (Amdahl)")
     put(tot, sb + 1, 2, f"={RED}", fmt="0.0", fill=CALC_FILL, border=True, bold=True)
