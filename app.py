@@ -148,13 +148,20 @@ def sidebar_globals():
     _today = max(1.0, float(adv["blended"]) * _gain)
     _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale)))
     TODAY_LABEL = "Today — quality-matched at the scale above"
-    CEIL_LABEL = f"Ceiling — kernel campaign lands (~×{CEILING_FLOP_LEVER:.0f})"
-    LANDED_LABEL = f"Campaign-landed — prefill+decode at maturity (~×{_landed:.0f})"
-    scenarios = {TODAY_LABEL: _today, CEIL_LABEL: float(CEILING_FLOP_LEVER),
-                 LANDED_LABEL: _landed}
+    LANDED_LABEL = f"Ceiling — campaign landed, full workload at maturity (~×{_landed:.0f})"
+    # 2026-09-01 user ruling: two scenarios only. The old prefill-only "Ceiling"
+    # (CEILING_FLOP_LEVER = x28.2 -> ~50x) was a cruder subset of the same
+    # maturity assumption and is retired from the picker; campaign-landed IS the
+    # ceiling now.
+    scenarios = {TODAY_LABEL: _today, LANDED_LABEL: _landed}
     if "scenario" not in st.session_state:
         # Default 2026-08-31 user ruling: the campaign-landed (maturity) scenario
-        # leads; Today and Ceiling stay one click away.
+        # leads; Today stays one click away.
+        st.session_state["scenario"] = LANDED_LABEL
+        st.session_state["flop_factor"] = scenarios[LANDED_LABEL]
+    elif st.session_state["scenario"] not in scenarios:
+        # Stale label from a previous session (scale slider moved, or the old
+        # three-scenario picker): fall back to the default.
         st.session_state["scenario"] = LANDED_LABEL
         st.session_state["flop_factor"] = scenarios[LANDED_LABEL]
 
@@ -176,19 +183,19 @@ def sidebar_globals():
     s.caption(
         f"**Today** = measured serving blend ×{adv['blended']:.2f} × equal-quality "
         f"parameter ratio ×{_gain:.2f} at {scale_label} (fit-derived) = **×{_today:.2f}**"
-        f"{_floor_note} — tracks the sliders above. **Ceiling** = measured prefill ×4.02 × "
-        f"×{CEILING_PREFILL_SPEEDUP:.2f} campaign speedup = **×{CEILING_FLOP_LEVER:.1f}** — and that "
-        f"×{CEILING_PREFILL_SPEEDUP:.2f} is now ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} **measured** "
-        f"(2026-08-24, banked in one day) × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} **target** "
-        f"(the funded 8k-win gate), not a flat assumption. **Campaign-landed** = the serving blend "
-        f"with BOTH legs at kernel maturity — decode {CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token "
-        f"× the measured 64-stream cell + prefill at the ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor — an "
-        f"ESTIMATE (aggregate-decode receipt pending); "
-        f"under Ceiling the FLOPs number below can be edited freely. Today vs Ceiling differ only ~2.5% in "
-        f"dollars **by design**: the cut is accel × (1−1/R) and saturates, so the money is mostly "
-        f"captured at ~20× — the scenarios differ in the reduction (×{reduction_factor(dict(g, flop_factor=_today)):.0f} "
-        f"vs ×{reduction_factor(dict(g, flop_factor=CEILING_FLOP_LEVER)):.0f}) and the residual compute "
-        f"bill, not the headline. Derivation: Methodology tab."
+        f"{_floor_note} — tracks the sliders above. Measured on the pre-campaign kernels "
+        f"(prefill anchor 2026-07-21), so it is conservative: the ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} "
+        f"already banked on the campaign is deliberately NOT folded in here (it re-bases when the "
+        f"aggregate-decode receipt lands). **Ceiling (campaign landed)** = the full workload at kernel "
+        f"maturity — decode {CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token × the "
+        f"measured 64-stream cell + prefill at the ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor "
+        f"(×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} **measured** × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} "
+        f"**target**, the funded 8k-win gate) — an ESTIMATE (aggregate-decode receipt pending). "
+        f"The dollar cut moves little between them **by design**: the cut is accel × (1−1/R) and "
+        f"saturates, so the money is mostly captured at ~20× — the scenarios differ in the reduction "
+        f"(×{reduction_factor(dict(g, flop_factor=_today)):.0f} vs "
+        f"×{reduction_factor(dict(g, flop_factor=_landed)):.0f}) and the residual compute bill, "
+        f"not the headline. Derivation: Methodology tab."
     )
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
