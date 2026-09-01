@@ -153,8 +153,10 @@ def sidebar_globals():
     scenarios = {TODAY_LABEL: _today, CEIL_LABEL: float(CEILING_FLOP_LEVER),
                  LANDED_LABEL: _landed}
     if "scenario" not in st.session_state:
-        st.session_state["scenario"] = TODAY_LABEL
-        st.session_state["flop_factor"] = scenarios[TODAY_LABEL]
+        # Default 2026-08-31 user ruling: the campaign-landed (maturity) scenario
+        # leads; Today and Ceiling stay one click away.
+        st.session_state["scenario"] = LANDED_LABEL
+        st.session_state["flop_factor"] = scenarios[LANDED_LABEL]
 
     def _apply_scenario():
         st.session_state["flop_factor"] = scenarios[st.session_state["scenario"]]
