@@ -1526,6 +1526,43 @@ def campaign_landed_train_ratio(ctx_tokens):
                          + f["tf_attn_ms_per_token_sq"] * float(ctx_tokens))
 
 
+# ---- fleet-typical frontier model (2026-08-31 (9) user ruling) ----------------
+# The landed scenario's MEMORY lever is now DERIVED from the geometry of the
+# models the hyperscalers are actually building, instead of the flat /100 floor
+# (which was calibrated on the small d2048/24L measured comparator). Fleet
+# flagship assumed ~2T total params (Sonnet/Terra class), GQA cache (8 KV heads
+# x head_dim 128 = 4 KiB/token/layer), depth ~ N^(1/3) anchored on disclosed
+# frontier depths -> ~85 layers, ~340 KB/token. Our equal-quality replacement:
+# quality-equivalent sqrt(total*active), fit-derived size ratio, measured
+# state-per-active-param fraction -> ~0.44 GB/stream. The ratio is CONTEXT-
+# LINEAR: x52 at the workload's 64k E[context], x208 at 256k, x833 at 1M --
+# NOTE it comes out BELOW the old /100 at 64k: honesty cuts both ways. The
+# measured Today/Ceiling family keeps mem_factor=100 (its own receipt basis).
+FLEET_MODEL_20260831 = {
+    "class": "~2T-total-parameter frontier flagship (Sonnet/Terra class), MoE active = total/25",
+    "n_total": 2e12,
+    "n_active": 2e12 / 25,
+    "kv_bytes_per_token_per_layer": 4096,   # GQA: 2(K+V) x 8 kv-heads x dh128 x bf16
+    "depth": 85,                             # 70 * (2/1.1)^(1/3), rounded
+    "state_fraction": 25.4e6 / (1.3e9 * 2),  # measured serving-state bytes per active param (bf16), 1.3B receipt
+}
+
+
+def fleet_memory_lever(ctx_tokens=None):
+    """Frontier-geometry memory lever for the landed scenario: the fleet
+    flagship's per-user cache over our equal-quality replacement's per-user
+    state. Context-linear. ESTIMATE (geometry assumptions above)."""
+    import math
+
+    f = FLEET_MODEL_20260831
+    ctx = float(WORKLOAD["context_tokens"] if ctx_tokens is None else ctx_tokens)
+    neq = math.sqrt(f["n_total"] * f["n_active"])
+    own_dense = neq / param_matching_gain(neq)
+    own_state = f["state_fraction"] * (own_dense / 5.0) * 2
+    cache = f["kv_bytes_per_token_per_layer"] * f["depth"] * ctx
+    return cache / own_state
+
+
 def campaign_landed_bdm_ms_per_token(width_scale=1.0):
     """Our per-token TRAINING cost at the landed target, in the tf-fit frame:
     x1.3 of the transformer's 2,048-token per-token cost (at the given
@@ -1611,7 +1648,9 @@ def campaign_landed_company_rows(year, kernels="mature"):
     rows = []
     for comp in COMPANIES:
         ts = shares.get(comp["name"], c["train_share"])
-        g = dict(GLOBALS, flop_factor=campaign_landed_blended_lever(ts, kernels=kernels))
+        g = dict(GLOBALS,
+                 flop_factor=campaign_landed_blended_lever(ts, kernels=kernels),
+                 mem_factor=fleet_memory_lever())
         rows.append(compute_company(comp, g, year))
     keys = ["total", "ai_capex", "accel", "ai_opex", "ai_rev", "net_now",
             "capex_avoided", "opex_saved", "spend_cut", "net_arch", "capitalized"]
@@ -1644,7 +1683,8 @@ def campaign_landed_reduction(train_share=None, curriculum=None, kernels="mature
     serving one (x348) -- Amdahl, as ever."""
     lever = campaign_landed_blended_lever(train_share, curriculum, kernels=kernels)
     g = GLOBALS
-    return 1.0 / (g["mem_share"] / g["mem_factor"] + (1 - g["mem_share"]) / lever)
+    mem = fleet_memory_lever()  # frontier-geometry, not the /100 floor
+    return 1.0 / (g["mem_share"] / mem + (1 - g["mem_share"]) / lever)
 
 
 # One row per assumption, visible on every surface that renders the serving /
