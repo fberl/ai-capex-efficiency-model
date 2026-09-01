@@ -31,6 +31,7 @@ from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             campaign_landed_flop_lever, CAMPAIGN_LANDED_20260831,
                             KERNEL_SPEEDUP_REALIZED_20260824,
                             KERNEL_SPEEDUP_REMAINING_TARGET,
+                            serving_context_sensitivity,
                             training_cost_saving, training_step_ratio,
                             training_advantage_mix, training_context_crossover,
                             training_helps_headline_threshold,
@@ -444,6 +445,26 @@ def sensitivity_tab(comps, g):
         row("% of market cap", lambda e: ((accel - accel / e) + opx / 1000) / disc / mcap, pct),
     ])
     st.caption("Base = SpaceX accelerator capex (matches the SpaceX tab at the conservative dc_scale=0), not total capex.")
+
+    section("Context sensitivity — prefill share of serving cost vs fleet E[context]")
+    ctx_rows = []
+    for cs in serving_context_sensitivity():
+        lbl = f"{int(cs['context_tokens']) // 1024}k" + (" (pinned)" if cs["pinned"] else "")
+        ctx_rows.append([
+            (lbl, "b" if cs["pinned"] else ""),
+            (f"{cs['tf_prefill_share']:.2%}", ""),
+            (f"{cs['own_prefill_share_today']:.1%}", ""),
+            (f"{cs['today_lever']:,.0f}×", "b"),
+            (f"{cs['ceiling_lever']:,.0f}×", "b"),
+            (f"{cs['gap_pct']:.1%}", "y"),
+        ])
+    show_table(["E[context]", "TF prefill share", "Our prefill share (Today)",
+                "Today lever", "Ceiling lever", "Today→Ceiling gap"], ctx_rows)
+    st.caption("Cost = box wall-clock, not FLOPs. The transformer's decode leg is KV-bandwidth-bound "
+               "(measured 1/context law) while its prefill runs near peak, so prefill is <1% of its "
+               "serving cost at every context — which is why the banked ×3.936 prefill (Today) and the "
+               "full ×7.03 (Ceiling) land within a few percent of each other. Headlines quote the "
+               "pinned 128k row (2026-08-31 fleet-context ruling).")
 
 
 # ---- cost ladder tab -----------------------------------------------------------
