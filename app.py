@@ -145,9 +145,15 @@ def sidebar_globals():
     _gain = param_matching_gain(_scale)
     # The flop_factor widget floors at 1.0, so the preset must too (the raw
     # value can drop below 1 at high train_share / short context).
-    _today = max(1.0, float(adv["blended"]) * _gain)
+    # Today re-based 2026-09-01 (user ruling: "fold in our current results and
+    # the aggregate-decode estimate — our estimates have been pretty accurate"):
+    # the same full-workload accounting as the ceiling, with prefill at only
+    # the BANKED x3.936 (no remaining target). The old frozen x9.24
+    # quality-matched lever stays available as the measured floor (see caption).
+    _today = max(1.0, float(campaign_landed_flop_lever(
+        n_tf=_scale, prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)))
     _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale)))
-    TODAY_LABEL = "Today — quality-matched at the scale above"
+    TODAY_LABEL = f"Today — banked kernels + decode estimate (~×{_today:.0f})"
     LANDED_LABEL = f"Ceiling — campaign landed, full workload at maturity (~×{_landed:.0f})"
     # 2026-09-01 user ruling: two scenarios only. The old prefill-only "Ceiling"
     # (CEILING_FLOP_LEVER = x28.2 -> ~50x) was a cruder subset of the same
@@ -178,28 +184,27 @@ def sidebar_globals():
     # Campaign-landed also tracks the deployment-scale slider on every rerun.
     if st.session_state.get("scenario") == LANDED_LABEL:
         st.session_state["flop_factor"] = float(_landed)
-    _floor_note = (" (raw ×%.2f floored at ×1)" % (adv["blended"] * _gain)
-                   if adv["blended"] * _gain < 1.0 else "")
     s.caption(
-        f"**Today** = measured serving blend ×{adv['blended']:.2f} × equal-quality "
-        f"parameter ratio ×{_gain:.2f} at {scale_label} (fit-derived) = **×{_today:.2f}**"
-        f"{_floor_note} — tracks the sliders above. Measured on the pre-campaign kernels "
-        f"(prefill anchor 2026-07-21), so it is conservative: the ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} "
-        f"already banked on the campaign is deliberately NOT folded in here (it re-bases when the "
-        f"aggregate-decode receipt lands). **Ceiling (campaign landed)** = the full workload at kernel "
-        f"maturity — decode {CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token × the "
-        f"measured 64-stream cell + prefill at the ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor "
-        f"(×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} **measured** × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} "
-        f"**target**, the funded 8k-win gate) — an ESTIMATE (aggregate-decode receipt pending). "
-        f"The dollar cut moves little between them **by design**: the cut is accel × (1−1/R) and "
-        f"saturates, so the money is mostly captured at ~20× — the scenarios differ in the reduction "
+        f"Both scenarios price the FULL workload — decode "
+        f"{CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token × the measured "
+        f"64-stream cell (aggregate-decode ESTIMATE, receipt pending) × equal-quality parameter "
+        f"ratio ×{_gain:.2f} at {scale_label}. **Today** carries prefill at only the "
+        f"×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} already **measured** on the campaign "
+        f"(2026-09-01 re-base: banked results + the decode estimate folded in — the estimates "
+        f"have tracked). **Ceiling (campaign landed)** adds the remaining "
+        f"×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} **target** (the funded 8k-win gate) — "
+        f"decode-dominated, so the two differ only ~3%. The old conservative floor (measured "
+        f"serving blend ×{adv['blended']:.2f} × ratio = ×{max(1.0, adv['blended'] * _gain):.2f}, "
+        f"pre-campaign 2026-07-21 basis) is retired from the picker but can be typed into the "
+        f"FLOPs field below. The dollar cut moves little between scenarios **by design**: the cut "
+        f"is accel × (1−1/R) and saturates — they differ in the reduction "
         f"(×{reduction_factor(dict(g, flop_factor=_today)):.0f} vs "
         f"×{reduction_factor(dict(g, flop_factor=_landed)):.0f}) and the residual compute bill, "
         f"not the headline. Derivation: Methodology tab."
     )
     s.subheader("Architecture")
     g["mem_factor"] = gnum("🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
-    g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 1, 100, 0.01, "%.2f")
+    g["flop_factor"] = gnum("🟡 FLOPs reduction (×)", "flop_factor", 1, 2000, 0.01, "%.2f")
     g["mem_share"] = gnum("🟡 Memory share of GPU cost", "mem_share", 0.0, 1.0, 0.05, "%.2f")
     auto_energy = s.checkbox("Auto-derive energy reduction (= cost reduction)", value=True,
                              help="Energy splits memory/compute like cost does. Uncheck to set manually.")
@@ -386,7 +391,7 @@ def inputs_tab(g):
     section("Global inputs (edit in the sidebar ◀)")
     items = [
         ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "O(1) state vs O(T) KV cache — MEASURED 2026-08-14 (full model): 64 concurrent 262k streams on one GPU in 1.62 GB against the transformer's 1 stream at 51.5 GB, a 2nd OOMs; 25.4 MB of state per stream vs 197 KB of KV per token of context — ÷100 is conservative"),
-        ("FLOPs reduction factor", f"{g['flop_factor']:.2f}×", "y", f"TODAY (default) = measured serving blend ×2.19 × fit-derived equal-quality parameter ratio at the sidebar's deployment scale = ×9.24 at the 1T default. CEILING = measured prefill ×4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) × ×{CEILING_PREFILL_SPEEDUP:.2f} campaign speedup = ×{CEILING_FLOP_LEVER:.1f}. Re-based 2026-08-24: that campaign factor is ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} MEASURED (already banked) × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} TARGET (the funded 8k-win gate), replacing a flat ×5.5 assumption"),
+        ("FLOPs reduction factor", f"{g['flop_factor']:.2f}×", "y", f"TODAY = full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token × 64 streams) and prefill at the banked ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} (2026-09-01 re-base). CEILING (campaign landed) = same, prefill at the full ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} MEASURED × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} TARGET, the funded 8k-win gate). Historical anchors: measured pre-campaign floor ×9.24 (serving blend ×2.19 × equal-quality ratio, 2026-07-21 basis); retired prefill-only ceiling ×{CEILING_FLOP_LEVER:.1f}"),
         ("Memory share of GPU cost", pct(g["mem_share"]), "y", "HBM + most CoWoS packaging → ~60/40 memory/compute (BOM)"),
         ("Opex / energy reduction", x1(energy_reduction(g)), "b" if g.get("opex_reduction_override") is None else "y", "DERIVED = cost-weighted reduction (energy splits memory/compute like cost); override in sidebar"),
         ("Discount rate", pct(g["discount_rate"]), "y", "perpetuity: value = annual benefit / rate"),
@@ -416,13 +421,16 @@ def inputs_tab(g):
 
 # ---- sensitivity tab -----------------------------------------------------------
 def sensitivity_tab(comps, g):
-    section("Sensitivity (SpaceX) — Today vs Ceiling vs live cost-weighted")
+    section("Sensitivity (SpaceX) — measured floor vs prefill-only ceiling vs live cost-weighted")
     sx = next(c for c in comps if c["name"] == "SpaceX")
     d = compute_company(sx, g, "fy25")
     accel, opx, disc, mcap = d["accel"], d["opex_saved"] * 1000, g["discount_rate"], g["spacex_mktcap"]
+    # Historical tiers kept as sensitivity anchors: the pre-campaign measured
+    # floor (x9.24) and the retired prefill-only ceiling (x28.2). The picker's
+    # scenarios sit far above both (decode estimate folded in, 2026-09-01).
     r_today = reduction_factor(dict(g, flop_factor=COMPUTE_LEVER_20260814))
     r_ceil = reduction_factor(dict(g, flop_factor=CEILING_FLOP_LEVER))
-    tiers = [(f"Today {r_today:.0f}×", r_today), (f"Ceiling {r_ceil:.0f}×", r_ceil),
+    tiers = [(f"Measured floor {r_today:.0f}×", r_today), (f"Prefill-only ceiling {r_ceil:.0f}×", r_ceil),
              (f"Cost-weighted (live) {reduction_factor(g):.0f}×", reduction_factor(g))]
     cols = ["Metric"] + [t[0] for t in tiers]
 
