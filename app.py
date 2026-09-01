@@ -148,8 +148,8 @@ def sidebar_globals():
     # Today re-based 2026-09-01 (user ruling: "fold in our current results and
     # the aggregate-decode estimate — our estimates have been pretty accurate"):
     # the same full-workload accounting as the ceiling, with prefill at only
-    # the BANKED x3.936 (no remaining target). The old frozen x9.24
-    # quality-matched lever stays available as the measured floor (see caption).
+    # the BANKED x3.936 (no remaining target). The pre-campaign x9.24 floor is
+    # DELETED from the app (2026-09-01 user ruling: no longer true or relevant).
     _today = max(1.0, float(campaign_landed_flop_lever(
         n_tf=_scale, prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)))
     _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale)))
@@ -193,10 +193,8 @@ def sidebar_globals():
         f"(2026-09-01 re-base: banked results + the decode estimate folded in — the estimates "
         f"have tracked). **Ceiling (campaign landed)** adds the remaining "
         f"×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} **target** (the funded 8k-win gate) — "
-        f"decode-dominated, so the two differ only ~3%. The old conservative floor (measured "
-        f"serving blend ×{adv['blended']:.2f} × ratio = ×{max(1.0, adv['blended'] * _gain):.2f}, "
-        f"pre-campaign 2026-07-21 basis) is retired from the picker but can be typed into the "
-        f"FLOPs field below. The dollar cut moves little between scenarios **by design**: the cut "
+        f"decode-dominated, so the two differ only ~3%. "
+        f"The dollar cut moves little between scenarios **by design**: the cut "
         f"is accel × (1−1/R) and saturates — they differ in the reduction "
         f"(×{reduction_factor(dict(g, flop_factor=_today)):.0f} vs "
         f"×{reduction_factor(dict(g, flop_factor=_landed)):.0f}) and the residual compute bill, "
@@ -391,7 +389,7 @@ def inputs_tab(g):
     section("Global inputs (edit in the sidebar ◀)")
     items = [
         ("Memory reduction factor", f"{g['mem_factor']:.0f}×", "y", "O(1) state vs O(T) KV cache — MEASURED 2026-08-14 (full model): 64 concurrent 262k streams on one GPU in 1.62 GB against the transformer's 1 stream at 51.5 GB, a 2nd OOMs; 25.4 MB of state per stream vs 197 KB of KV per token of context — ÷100 is conservative"),
-        ("FLOPs reduction factor", f"{g['flop_factor']:.2f}×", "y", f"TODAY = full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token × 64 streams) and prefill at the banked ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} (2026-09-01 re-base). CEILING (campaign landed) = same, prefill at the full ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} MEASURED × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} TARGET, the funded 8k-win gate). Historical anchors: measured pre-campaign floor ×9.24 (serving blend ×2.19 × equal-quality ratio, 2026-07-21 basis); retired prefill-only ceiling ×{CEILING_FLOP_LEVER:.1f}"),
+        ("FLOPs reduction factor", f"{g['flop_factor']:.2f}×", "y", f"TODAY = full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token × 64 streams) and prefill at the banked ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} (2026-09-01 re-base). CEILING (campaign landed) = same, prefill at the full ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} MEASURED × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} TARGET, the funded 8k-win gate)"),
         ("Memory share of GPU cost", pct(g["mem_share"]), "y", "HBM + most CoWoS packaging → ~60/40 memory/compute (BOM)"),
         ("Opex / energy reduction", x1(energy_reduction(g)), "b" if g.get("opex_reduction_override") is None else "y", "DERIVED = cost-weighted reduction (energy splits memory/compute like cost); override in sidebar"),
         ("Discount rate", pct(g["discount_rate"]), "y", "perpetuity: value = annual benefit / rate"),
@@ -421,16 +419,16 @@ def inputs_tab(g):
 
 # ---- sensitivity tab -----------------------------------------------------------
 def sensitivity_tab(comps, g):
-    section("Sensitivity (SpaceX) — measured floor vs prefill-only ceiling vs live cost-weighted")
+    section("Sensitivity (SpaceX) — Today vs Ceiling vs live cost-weighted")
     sx = next(c for c in comps if c["name"] == "SpaceX")
     d = compute_company(sx, g, "fy25")
     accel, opx, disc, mcap = d["accel"], d["opex_saved"] * 1000, g["discount_rate"], g["spacex_mktcap"]
-    # Historical tiers kept as sensitivity anchors: the pre-campaign measured
-    # floor (x9.24) and the retired prefill-only ceiling (x28.2). The picker's
-    # scenarios sit far above both (decode estimate folded in, 2026-09-01).
-    r_today = reduction_factor(dict(g, flop_factor=COMPUTE_LEVER_20260814))
-    r_ceil = reduction_factor(dict(g, flop_factor=CEILING_FLOP_LEVER))
-    tiers = [(f"Measured floor {r_today:.0f}×", r_today), (f"Prefill-only ceiling {r_ceil:.0f}×", r_ceil),
+    # Tiers mirror the sidebar picker (2026-09-01: pre-campaign floor and the
+    # prefill-only ceiling are deleted — current numbers and upper bound only).
+    r_today = reduction_factor(dict(g, flop_factor=campaign_landed_flop_lever(
+        prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)))
+    r_ceil = reduction_factor(dict(g, flop_factor=campaign_landed_flop_lever()))
+    tiers = [(f"Today {r_today:.0f}×", r_today), (f"Ceiling {r_ceil:.0f}×", r_ceil),
              (f"Cost-weighted (live) {reduction_factor(g):.0f}×", reduction_factor(g))]
     cols = ["Metric"] + [t[0] for t in tiers]
 
@@ -833,14 +831,16 @@ def methodology_tab(g):
 ### Methodology & sources
 
 **Engine.** A GPU is ~60% memory / ~40% compute by cost. The cost-weighted reduction is Amdahl —
-floored by the least-reduced component, compute. At the **Today** defaults (memory ×100, FLOPs ×9.24)
-the residual is ~0.6% + 4.3% → **~20×**; the **Ceiling** lever (measured prefill ×4.02 × 7.03
-campaign speedup = ×28.2) gives **~50×**. Multiplying the levers (100×·9.2× ≈ 900×) is *not*
-physical: cost is additive, not multiplicative. The ×7.03 was a flat ×5.5 assumption until
-2026-08-24; it is now **×3.94 measured** (already banked; 2k clean-wall position of record
-2026-08-29, 101.737 vs 59.268 ms) × **×1.79 target** (the funded 8k-win gate).
+floored by the least-reduced component. Since the 2026-09-01 re-base both scenarios price the full
+workload with the aggregate-decode estimate folded in (2.5 ms/token × 64 streams): **Today** carries
+prefill at the banked ×3.94 (FLOPs lever ~×793), the **Ceiling** adds the remaining ×1.79 target
+(~×816) — at those levers the reduction is *memory*-floored (~×154 at the default ÷100), and the two
+scenarios differ only ~3% because decode dominates. Multiplying the levers is *not* physical: cost is
+additive, not multiplicative. The ×7.03 maturity factor was a flat ×5.5 assumption until 2026-08-24;
+it is now **×3.94 measured** (already banked; 2k clean-wall position of record 2026-08-29, 101.737 vs
+59.268 ms) × **×1.79 target** (the funded 8k-win gate).
 
-**Measured tier (default) — the workload mix.** A single compute number cannot represent training,
+**The measured workload mix (background).** A single compute number cannot represent training,
 prefill and decode: at today's kernel maturity they point in *opposite* directions. Training is still a
 loss at short sequence, but a much smaller one since the 2026-08-24..29 kernel re-base: the transformer is
 **×1.72 cheaper per step at T=2,048** (the 2026-08-29 clean-wall position of record) and **×1.79 at
@@ -859,10 +859,11 @@ That blend compares the two families at **matched size**. The sealed 2026-08-14 
 axis — how big each family has to be for the *same quality*. Four ladder rungs per family (47M–663M
 params) fitted as `ln(bpb) = a + b·ln(params)` cross at **392M**, and above the crossing bAttention
 reaches the transformer fit's quality on **84.2% of the parameters at 1B, 55.2% at 10B, 36.2% at 100B,
-23.7% at 1T, 15.5% at 10T**. Per-token cost is ~linear in parameters, so the default scenario multiplies
-the blend by that ratio: ×2.19 MEASURED × ×4.22 **FIT-DERIVED** = ×9.24 → **~20× cost-weighted**. The
-receipt's own words for the second factor: *a projection of the two fits, not a measurement* — every
-point past ~1B extrapolates beyond the measured rungs.
+23.7% at 1T, 15.5% at 10T**. Per-token cost is ~linear in parameters, so both scenarios multiply the
+serving lever by that equal-quality ratio (×4.22 at 1T). The receipt's own words for that factor:
+*a projection of the two fits, not a measurement* — every point past ~1B extrapolates beyond the
+measured rungs. (The pre-campaign composite ×2.19 × ×4.22 = ×9.24 was the app's Today lever until
+2026-09-01; it is retired — measured on kernels that no longer exist.)
 
 The counterweight is measured and points the other way, though it moved a long way over 2026-08-24..29: on
 one GH200, one layer, fwd+bwd, bf16, checkpointing off both arms, against a *modern* transformer block
@@ -942,15 +943,16 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. **Today** (quality-matched
-at 1T, ~20×, the default): spend cut ~\$159B → burn ~−\$136B (~\$2.6T capitalized at the 6% rate; global
-est ~\$3.3T FY25, ~\$7.6T FY26). On FY2026 guidance the cut grows to ~\$366B. **Ceiling** (~50×): ~\$164B
-FY25. The cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying capex, shares
-and revenue never move.
+**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. At the re-based levers
+(2026-09-01: banked kernels + the aggregate-decode estimate; ~×154 cost-weighted, memory-floored) the
+named spend cut is **~\$166B FY25** (~\$2.8T capitalized at the 6% rate; global est ~\$3.5T FY25) and
+**~\$382B on FY2026 guidance** (~\$6.4T / global ~\$8.0T). Today and Ceiling are within rounding of each
+other in dollars: the cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying
+capex, shares and revenue never move.
 
-**Sensitivity.** `capex_avoided ∝ (1 − 1/R)` is 0.95 at R ≈ 20, so the dollar headline is not very
-sensitive to the compute lever — doubling it (Today → Ceiling) moves FY25 by ~2.5%. The discount rate IS
-a first-order lever on the capitalized figures: they scale as 1/rate.
+**Sensitivity.** `capex_avoided ∝ (1 − 1/R)` is 0.99 at R ≈ 150, so the dollar headline is essentially
+insensitive to the compute lever at these levels. The discount rate IS a first-order lever on the
+capitalized figures: they scale as 1/rate.
 
 **Caveats.** AI revenue is the softest input (Microsoft \$37B & Amazon \$15B run-rates disclosed; the rest
 estimated; Meta's real payoff is indirect ad-uplift). Totals are disclosed; server/accelerator splits are
@@ -967,8 +969,8 @@ Per-company source links are on each company tab.
 st.title("AI Capex Efficiency")
 st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage "
            "across the 6 largest AI-capex spenders + a global estimate. Two scenarios: **Today** "
-           "(memory ÷100 + compute ×9.24 → ~20× cost-weighted) and **Ceiling** (the kernel "
-           "campaign lands, ×28.2 → ~50×). Set the workload and scenario in the sidebar; derivations live in "
+           "(banked kernel results + the aggregate-decode estimate) and **Ceiling** (the funded kernel "
+           "campaign fully lands). Set the workload and scenario in the sidebar; derivations live in "
            "the **Methodology** and **Serving·Training** tabs. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
