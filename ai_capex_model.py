@@ -1423,6 +1423,11 @@ CAMPAIGN_LANDED_20260831 = {
     # 2026-08-14 cell (64 streams in 1.62 GB, a grid cap, 9.5% GPU-busy) -- an
     # ESTIMATE that batching keeps the 2.5 ms step at that concurrency.
     "streams_per_gpu": 64,
+    # E[context] for the landed scenario (2026-08-31 (10) user ruling): 131,072.
+    # The measured Today family keeps the 64k WORKLOAD default (its receipt
+    # basis); the landed scenario prices the fleet where agentic/long-RL usage
+    # is heading -- 128k is the realistic middle (256k overshoots today's mean).
+    "context_tokens": 131072,
     # Prefill at maturity: our prefill arm speeds up by the SAME campaign factor
     # the ceiling uses (realized x3.94 MEASURED on our arm x x1.786 TARGET to the
     # 8k gate = x7.03, CEILING_PREFILL_SPEEDUP). Applied to our measured
@@ -1496,7 +1501,7 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
     c = CAMPAIGN_LANDED_20260831
     n_streams = streams_per_gpu if streams_per_gpu is not None else c["streams_per_gpu"]
     ms = decode_ms_per_token if decode_ms_per_token is not None else c["decode_own_ms_per_token"]
-    w = dict(WORKLOAD, **(w or {}))
+    w = dict(WORKLOAD, context_tokens=c["context_tokens"], **(w or {}))
     ctx = float(w["context_tokens"])
     r = float(w["in_out_ratio"])
     gpus = SERVING["gpus_per_box"]
@@ -1555,7 +1560,8 @@ def fleet_memory_lever(ctx_tokens=None):
     import math
 
     f = FLEET_MODEL_20260831
-    ctx = float(WORKLOAD["context_tokens"] if ctx_tokens is None else ctx_tokens)
+    ctx = float(CAMPAIGN_LANDED_20260831["context_tokens"]
+                if ctx_tokens is None else ctx_tokens)
     neq = math.sqrt(f["n_total"] * f["n_active"])
     own_dense = neq / param_matching_gain(neq)
     own_state = f["state_fraction"] * (own_dense / 5.0) * 2
