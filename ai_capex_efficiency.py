@@ -72,12 +72,46 @@ def safe_text(v):
 
 
 def header(ws, row, text, span=6):
-    ws.cell(row=row, column=1, value=safe_text(text)).font = WHITE_BOLD
+    ws.cell(row=row, column=1, value=safe_text(scrub_external(text))).font = WHITE_BOLD
     for col in range(1, span + 1):
         ws.cell(row=row, column=col).fill = HEAD_FILL
 
 
+# ---- external-content scrub (2026-09-01 pre-send review) ------------------------
+# This workbook goes to outsiders. Content rule: the owned models are described
+# only as "nonlinear internal dynamics with attractor states" — no mechanism
+# terms (recurrent/RNN/scan), no kernel-stack internals, no internal cell names,
+# no file paths or module/function names. Applied to EVERY string cell at write
+# time so model-sourced provenance text cannot leak through.
+import re as _re
+
+_EXTERNAL_SCRUB = [
+    (_re.compile(r"(?:/home/)?[\w~.-]+(?:/[\w~.()\[\]-]+)+\.(?:json|md|png|py|csv)"),
+     "internal measurement archive"),
+    (_re.compile(r"\b[\w-]+\.(?:json|md|png|py|csv)\b"), "internal measurement archive"),
+    (_re.compile(r"\b(?:paper|experiments|bdm|src)/[\w./-]+"), "internal measurement archive"),
+    (_re.compile(r"rows\[bdm"), "rows[bAttention"),
+    (_re.compile(r"\bai_capex_model\.\w+"), "the model"),
+    (_re.compile(r"\bSERVING\['\w+'\]"), "the model"),
+    (_re.compile(r"\b\w+\(\)"), "the model"),
+    (_re.compile(r"\b[A-Z0-9]+_[A-Z0-9_]+\b"), "the model"),  # internal constant names
+    (_re.compile(r"\bTriton\s+"), ""),
+    (_re.compile(r"\bstepped_vs_scanned\b"), "token-by-token ratio"),
+    (_re.compile(r"\brecurrence\b", _re.I), "internal dynamics"),
+    (_re.compile(r"\brecurrent\b", _re.I), "internal"),
+    (_re.compile(r"\bRNN\b"), "our architecture"),
+]
+
+
+def scrub_external(s: str) -> str:
+    for pat, rep in _EXTERNAL_SCRUB:
+        s = pat.sub(rep, s)
+    return s
+
+
 def put(ws, r, c, val, fmt=None, fill=None, border=False, bold=False, wrap=False):
+    if isinstance(val, str) and not val.startswith("="):
+        val = scrub_external(val)
     cell = ws.cell(
         row=r, column=c, value=safe_text(val) if isinstance(val, str) else val
     )
@@ -129,7 +163,7 @@ def build_inputs(inp):
             "Memory reduction factor",
             G["mem_factor"],
             "x",
-            "1e-2 memory = 100x less (RNN O(1) state vs transformer O(T) KV cache).",
+            "1e-2 memory = 100x less (O(1) internal state vs transformer O(T) KV cache).",
             INPUT_FILL,
         ),
         (
@@ -208,7 +242,7 @@ def build_inputs(inp):
             "SpaceX market cap",
             G["spacex_mktcap"],
             "$B",
-            "~$1.84T Aug 2026; IPO 2026-06-12 at ~$1.77T (market data; used by Sensitivity).",
+            "~$1.95T Aug 2026; IPO 2026-06-12 at ~$1.77T (market data; used by Sensitivity).",
             DATA_FILL,
         ),
         (
@@ -684,6 +718,9 @@ def build_totals(tot, tabs):
     put(tot, fr, 5, f"={nn26}", fmt="#,##0", border=True, fill=SUB_FILL)
     put(tot, fr, 6, f"={cut26}", fmt="#,##0", border=True, fill=SUB_FILL)
     put(tot, fr, 7, f"={arch26}", fmt="#,##0", border=True, fill=SUB_FILL)
+    capex26 = "SUM(" + ",".join(f"{t}!$C$33" for t in tabs) + ")"
+    opex26 = "SUM(" + ",".join(f"{t}!$C$34" for t in tabs) + ")"
+    put(tot, fr, 8, f"={cut26}/({capex26}+{opex26})", fmt="0%", border=True, fill=SUB_FILL)
     # FY27 prediction row (2026-09-01 user request): STATIC values at model
     # defaults (compute_year on the fy27 street-estimate capex — Morgan Stanley
     # +57% path; Oracle's ~$70B is the only real FY27 guide). Company tabs carry
@@ -785,9 +822,13 @@ def build_totals(tot, tabs):
         ("Inputs", "global assumptions + the reduction engine (cost-weighted factor)"),
         (
             "Sensitivity",
-            "SpaceX value across reduction tiers (10x/30x/100x/cost-weighted)",
+            "SpaceX value across the Today / Ceiling / live cost-weighted tiers + context sensitivity",
         ),
         ("CostLadder", "own-silicon vs buy-NVIDIA vs rent $/GPU-hr"),
+        (
+            "ServingTraining",
+            "the serving/training measurement ledger behind the levers — status-tagged (MEASURED / ESTIMATE / TARGET)",
+        ),
         (
             "Evidence",
             "BOM cost split, accelerator-share data, own-silicon TCO, filing top-lines",
@@ -1120,7 +1161,7 @@ def build_evidence(ev):
             fill=CALC_FILL,
             border=True,
         )
-        put(ev, rr, 4, "compute term dominates -> stays far below 100x")
+        put(ev, rr, 4, "memory term dominates -> pinned near the 100x memory lever")
 
 
 def build_methodology(meth):
@@ -1222,7 +1263,7 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Multiplying the levers (100x * 9.2x ~ 900x) is NOT physical: cost is additive (Amdahl), not multiplicative.",
+            "- Multiplying the levers (100x * ~793x ~ 79,000x) is NOT physical: cost is additive (Amdahl), not multiplicative.",
             False,
         ),
         (
@@ -1445,7 +1486,7 @@ def build_serving_training(ws):
          "", INPUT_FILL, "PROJECTION — quality_fit.ref_70B"),
         ("Tokens for equal quality at 70B", f"x{MEASURED['parity_70B_token_multiple']:.2f} [1.33-2.10] (beta=0.28 assumption)",
          "", INPUT_FILL, "PROJECTION — quality_fit.ref_70B"),
-        ("Stepped vs scanned training", f"x{MEASURED['stepped_vs_scanned']:.0f} cost to step the recurrence token-by-token",
+        ("Token-by-token vs production training", f"x{MEASURED['stepped_vs_scanned']:.0f} cost to run training token-by-token instead of the production path",
          "", DATA_FILL, "MEASURED — stepped_vs_scanned"),
     ]
     for c, t in enumerate(["Metric", "Value", "Ratio / consequence", "", "", "Status — derived.json key"], start=1):
@@ -1466,7 +1507,7 @@ def build_serving_training(ws):
         "single number cannot represent them. Training is still a loss at short sequence, but a much "
         f"smaller one since the 2026-08-24 kernel re-base (transformer "
         f"{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}x faster at T=2,048 and "
-        f"{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f}x at T=8,192, crossover near T~32,000; it was "
+        f"{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f}x at T=8,192, crossover near T~13,000 (2026-08-29 anchor); it was "
         "5.3-9.6x with a crossover near T~88,000 on the pre-campaign d1152 sweep). Prefill crosses over near 65k context. "
         "Decode crosses in our favour near ~30k context. The lever is therefore blended over the workload: per "
         "generated token, in:out input tokens through prefill plus one token through decode, using "
