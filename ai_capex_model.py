@@ -1507,7 +1507,7 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
     c = CAMPAIGN_LANDED_20260831
     n_streams = streams_per_gpu if streams_per_gpu is not None else c["streams_per_gpu"]
     ms = decode_ms_per_token if decode_ms_per_token is not None else c["decode_own_ms_per_token"]
-    w = dict(WORKLOAD, context_tokens=c["context_tokens"], **(w or {}))
+    w = {**WORKLOAD, "context_tokens": c["context_tokens"], **(w or {})}
     ctx = float(w["context_tokens"])
     r = float(w["in_out_ratio"])
     gpus = SERVING["gpus_per_box"]
@@ -1537,6 +1537,48 @@ assert abs(GLOBALS["flop_factor"] - TODAY_FLOP_LEVER_20260901) < 0.05, (
     f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
     f"Today lever {TODAY_FLOP_LEVER_20260901:.4f}"
 )
+
+
+def serving_context_sensitivity(contexts=(8192, 32768, 131072, 262144)):
+    """How the Today/Ceiling levers and prefill's share of serving cost move
+    with the fleet E[context] assumption (2026-09-01 user request).
+
+    Cost here is box WALL-CLOCK, not FLOPs: at the pinned 128k E[context] the
+    transformer's decode leg is KV-bandwidth-bound (~1,024 tok/s/box under the
+    measured 1/context law) while its prefill leg runs near peak, so prefill is
+    only ~0.24% of its serving cost. At chat-typical 8k contexts decode is
+    ~16x cheaper and prefill's share climbs — and with it the gap between the
+    Today (banked x3.936 prefill) and Ceiling (full x7.03) tiers.
+
+    Returns one row per context: transformer / own prefill cost shares, both
+    levers, and the Today->Ceiling gap. 131072 is the pinned assumption every
+    headline quotes (2026-08-31 (9) ruling)."""
+    c = CAMPAIGN_LANDED_20260831
+    r = float(WORKLOAD["in_out_ratio"])
+    gpus = SERVING["gpus_per_box"]
+    own_dec_cost = 1.0 / (c["streams_per_gpu"] * 1000.0
+                          / c["decode_own_ms_per_token"] * gpus)
+    rows = []
+    for ctx in contexts:
+        ctx = float(ctx)
+        tf_pf_cost = r / (prefill_tokens_per_s("transformer", ctx) * gpus)
+        tf_dec_cost = 1.0 / serving_economics(ctx)["tf_tokens_per_s_box"]
+        own_pf_cost = r / (prefill_tokens_per_s("bdm", ctx) * gpus
+                           * KERNEL_SPEEDUP_REALIZED_20260824)
+        today = campaign_landed_flop_lever(
+            w={"context_tokens": ctx},
+            prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)
+        ceiling = campaign_landed_flop_lever(w={"context_tokens": ctx})
+        rows.append({
+            "context_tokens": ctx,
+            "tf_prefill_share": tf_pf_cost / (tf_pf_cost + tf_dec_cost),
+            "own_prefill_share_today": own_pf_cost / (own_pf_cost + own_dec_cost),
+            "today_lever": today,
+            "ceiling_lever": ceiling,
+            "gap_pct": ceiling / today - 1.0,
+            "pinned": ctx == float(CAMPAIGN_LANDED_20260831["context_tokens"]),
+        })
+    return rows
 
 
 def campaign_landed_train_ratio(ctx_tokens):

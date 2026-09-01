@@ -44,6 +44,7 @@ from ai_capex_model import (  # single source of truth for defaults
     training_step_ratio, training_context_crossover, training_advantage_mix,
     training_helps_headline_threshold, headline_with_training,
     TRAINING_CURRICULA, KV_MB_PER_TOKEN_PER_STREAM,
+    serving_context_sensitivity,
 )
 
 INPUT_FILL = PatternFill(
@@ -798,7 +799,7 @@ def build_totals(tot, tabs):
 
 
 def build_sensitivity(sens):
-    widths(sens, {"A": 30, "B": 16, "C": 16, "D": 16, "E": 18})
+    widths(sens, {"A": 30, "B": 16, "C": 16, "D": 16, "E": 18, "F": 18})
     header(
         sens,
         1,
@@ -852,6 +853,38 @@ def build_sensitivity(sens):
         wrap=True,
     )
     sens.merge_cells("A10:E10")
+
+    # ---- context sensitivity (2026-09-01 user request) --------------------------
+    # Static values computed by ai_capex_model.serving_context_sensitivity() at
+    # build time (the levers need the model's prefill/decode interpolators, which
+    # have no in-sheet formula equivalent).
+    header(sens, 12, "CONTEXT SENSITIVITY — prefill share of serving cost vs fleet E[context]", span=6)
+    ctx_cols = ["E[context]", "TF prefill share", "Our prefill share (Today)",
+                "Today lever (x)", "Ceiling lever (x)", "Today->Ceiling gap"]
+    for j, name in enumerate(ctx_cols):
+        put(sens, 13, 1 + j, name, bold=True, wrap=True)
+    for i, cs in enumerate(serving_context_sensitivity()):
+        rr = 14 + i
+        lbl = f"{int(cs['context_tokens']) // 1024}k" + (" (pinned)" if cs["pinned"] else "")
+        put(sens, rr, 1, lbl, bold=cs["pinned"])
+        put(sens, rr, 2, cs["tf_prefill_share"], fmt="0.00%", fill=CALC_FILL, border=True)
+        put(sens, rr, 3, cs["own_prefill_share_today"], fmt="0.0%", fill=CALC_FILL, border=True)
+        put(sens, rr, 4, cs["today_lever"], fmt="#,##0", fill=CALC_FILL, border=True)
+        put(sens, rr, 5, cs["ceiling_lever"], fmt="#,##0", fill=CALC_FILL, border=True)
+        put(sens, rr, 6, cs["gap_pct"], fmt="0.0%", fill=CALC_FILL, border=True)
+    put(
+        sens,
+        19,
+        1,
+        "Cost = box wall-clock, not FLOPs. The transformer's decode leg is KV-bandwidth-bound "
+        "(measured 1/context law) while its prefill runs near peak, so prefill is <1% of its "
+        "serving cost at every context — which is why the banked x3.936 prefill (TODAY) and the "
+        "full x7.03 (CEILING) land within a few percent of each other. Inputs!B24/B25 quote the "
+        "pinned 128k row (2026-08-31 fleet-context ruling). Static values from "
+        "ai_capex_model.serving_context_sensitivity() — rebuild the workbook to refresh.",
+        wrap=True,
+    )
+    sens.merge_cells("A19:F19")
 
 
 def build_ladder(ladder):
