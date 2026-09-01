@@ -28,6 +28,7 @@ from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             param_matching_gain, CEILING_FLOP_LEVER,
                             CEILING_PREFILL_SPEEDUP,
                             KERNEL_CAMPAIGN_20260824,
+                            campaign_landed_flop_lever, CAMPAIGN_LANDED_20260831,
                             KERNEL_SPEEDUP_REALIZED_20260824,
                             KERNEL_SPEEDUP_REMAINING_TARGET,
                             training_cost_saving, training_step_ratio,
@@ -145,9 +146,12 @@ def sidebar_globals():
     # The flop_factor widget floors at 1.0, so the preset must too (the raw
     # value can drop below 1 at high train_share / short context).
     _today = max(1.0, float(adv["blended"]) * _gain)
+    _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale)))
     TODAY_LABEL = "Today — quality-matched at the scale above"
     CEIL_LABEL = f"Ceiling — kernel campaign lands (~×{CEILING_FLOP_LEVER:.0f})"
-    scenarios = {TODAY_LABEL: _today, CEIL_LABEL: float(CEILING_FLOP_LEVER)}
+    LANDED_LABEL = f"Campaign-landed — prefill+decode at maturity (~×{_landed:.0f})"
+    scenarios = {TODAY_LABEL: _today, CEIL_LABEL: float(CEILING_FLOP_LEVER),
+                 LANDED_LABEL: _landed}
     if "scenario" not in st.session_state:
         st.session_state["scenario"] = TODAY_LABEL
         st.session_state["flop_factor"] = scenarios[TODAY_LABEL]
@@ -162,6 +166,9 @@ def sidebar_globals():
     # flop_factor widget is created further down.
     if st.session_state.get("scenario") == TODAY_LABEL:
         st.session_state["flop_factor"] = float(_today)
+    # Campaign-landed also tracks the deployment-scale slider on every rerun.
+    if st.session_state.get("scenario") == LANDED_LABEL:
+        st.session_state["flop_factor"] = float(_landed)
     _floor_note = (" (raw ×%.2f floored at ×1)" % (adv["blended"] * _gain)
                    if adv["blended"] * _gain < 1.0 else "")
     s.caption(
@@ -171,8 +178,11 @@ def sidebar_globals():
         f"×{CEILING_PREFILL_SPEEDUP:.2f} campaign speedup = **×{CEILING_FLOP_LEVER:.1f}** — and that "
         f"×{CEILING_PREFILL_SPEEDUP:.2f} is now ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} **measured** "
         f"(2026-08-24, banked in one day) × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} **target** "
-        f"(the funded 8k-win gate), not a flat assumption; "
-        f"under Ceiling the FLOPs number below can be edited freely. The two differ only ~2.5% in "
+        f"(the funded 8k-win gate), not a flat assumption. **Campaign-landed** = the serving blend "
+        f"with BOTH legs at kernel maturity — decode {CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token "
+        f"× the measured 64-stream cell + prefill at the ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor — an "
+        f"ESTIMATE (aggregate-decode receipt pending); "
+        f"under Ceiling the FLOPs number below can be edited freely. Today vs Ceiling differ only ~2.5% in "
         f"dollars **by design**: the cut is accel × (1−1/R) and saturates, so the money is mostly "
         f"captured at ~20× — the scenarios differ in the reduction (×{reduction_factor(dict(g, flop_factor=_today)):.0f} "
         f"vs ×{reduction_factor(dict(g, flop_factor=CEILING_FLOP_LEVER)):.0f}) and the residual compute "

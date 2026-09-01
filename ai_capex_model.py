@@ -1423,6 +1423,11 @@ CAMPAIGN_LANDED_20260831 = {
     # 2026-08-14 cell (64 streams in 1.62 GB, a grid cap, 9.5% GPU-busy) -- an
     # ESTIMATE that batching keeps the 2.5 ms step at that concurrency.
     "streams_per_gpu": 64,
+    # Prefill at maturity: our prefill arm speeds up by the SAME campaign factor
+    # the ceiling uses (realized x3.94 MEASURED on our arm x x1.786 TARGET to the
+    # 8k gate = x7.03, CEILING_PREFILL_SPEEDUP). Applied to our measured
+    # saturated-lane prefill throughput inside the landed serving blend.
+    "prefill_speedup_at_maturity": "CEILING_PREFILL_SPEEDUP (x7.03 = x3.936 measured x x1.786 target)",
     # Training-side targets (label the scenario; the headline lever is a SERVING
     # claim with train_share=0, so these do not enter the dollars):
     "train_mem_ratio_target": 1.0,   # TF training-memory parity. Path is real: banked
@@ -1470,12 +1475,17 @@ CAMPAIGN_LANDED_20260831 = {
 }
 
 
-def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w=None):
+def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w=None,
+                               n_tf=None):
     """The campaign-landed compute lever: the Today lever's structure (serving
-    blend x fit-derived equal-quality parameter ratio) with OUR decode leg
-    replaced by the post-edit target (streams_per_gpu x 1000/decode_ms tok/s/GPU,
-    context-flat). Transformer side stays the measured 1/context law at its KV
-    ceiling. ESTIMATE until the receipt in CAMPAIGN_LANDED_20260831 lands."""
+    blend x fit-derived equal-quality parameter ratio) with BOTH our serving
+    legs at kernel maturity (2026-08-31 (6) user ruling): decode replaced by the
+    post-edit target (streams_per_gpu x 1000/decode_ms tok/s/GPU, context-flat)
+    and our prefill throughput scaled by the campaign factor
+    CEILING_PREFILL_SPEEDUP (x3.936 measured x x1.786 target). Transformer side
+    stays the measured 1/context law at its KV ceiling. n_tf sets the
+    equal-quality scale (default the deck's 1T). ESTIMATE until the receipts in
+    CAMPAIGN_LANDED_20260831 land."""
     c = CAMPAIGN_LANDED_20260831
     n_streams = streams_per_gpu if streams_per_gpu is not None else c["streams_per_gpu"]
     ms = decode_ms_per_token if decode_ms_per_token is not None else c["decode_own_ms_per_token"]
@@ -1487,10 +1497,12 @@ def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w
     tf_dec_tps = econ["tf_tokens_per_s_box"]
     own_dec_tps = n_streams * 1000.0 / ms * gpus
     tf_pf_tps = prefill_tokens_per_s("transformer", ctx) * gpus
-    own_pf_tps = prefill_tokens_per_s("bdm", ctx) * gpus
+    own_pf_tps = (prefill_tokens_per_s("bdm", ctx) * gpus
+                  * CEILING_PREFILL_SPEEDUP)  # prefill at maturity
     tf_total = r / tf_pf_tps + 1.0 / tf_dec_tps
     own_total = r / own_pf_tps + 1.0 / own_dec_tps
-    return (tf_total / own_total) * param_matching_gain(DECK_DEPLOYMENT_SCALE)
+    scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
+    return (tf_total / own_total) * param_matching_gain(scale)
 
 
 CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 347.7 at the 64-stream / 2.5 ms targets
@@ -1505,6 +1517,16 @@ def campaign_landed_train_ratio(ctx_tokens):
     bdm_target = CAMPAIGN_LANDED_20260831["train_step_ratio_2k_target"] * tf_2k
     return bdm_target / (f["tf_base_ms_per_token"]
                          + f["tf_attn_ms_per_token_sq"] * float(ctx_tokens))
+
+
+def campaign_landed_bdm_ms_per_token(width_scale=1.0):
+    """Our per-token TRAINING cost at the landed target, in the tf-fit frame:
+    x1.3 of the transformer's 2,048-token per-token cost (at the given
+    effective width scale), flat in context. TARGET, not a receipt."""
+    f = TRAIN_COST_FIT_20260824
+    tf_2k = (f["tf_base_ms_per_token"]
+             + f["tf_attn_ms_per_token_sq"] * 2048.0 * width_scale)
+    return CAMPAIGN_LANDED_20260831["train_step_ratio_2k_target"] * tf_2k
 
 
 def campaign_landed_train_crossover():
