@@ -221,7 +221,8 @@ def edit_company_inputs(c):
     p = f"e_{c['name']}_"
     t25, i25, s25, a25 = c["fy25"]
     t26, i26, s26, a26 = c["fy26"]
-    r25, r26 = c["ai_rev"]
+    r25, r26 = c["ai_rev"][0], c["ai_rev"][1]
+    rev_tail = tuple(c["ai_rev"][2:])  # fy27 est (charts-only) — preserved untouched
     st.caption("🟡 assumption · 🟢 disclosed data — edit; the grids below recompute.")
     h = st.columns([2.4, 1, 1]); h[0].markdown("**Metric**"); h[1].markdown("**FY2025**"); h[2].markdown("**FY2026**")
 
@@ -244,7 +245,7 @@ def edit_company_inputs(c):
     mcap = st.number_input("🟢 Market cap ($B)", min_value=0.0, max_value=10000.0, step=10.0,
                            key=p + "mcap", format="%.0f")
     c["fy25"], c["fy26"] = (t25, i25, s25, a25), (t26, i26, s26, a26)
-    c["ai_rev"], c["mcap"] = (r25, r26), mcap
+    c["ai_rev"], c["mcap"] = (r25, r26) + rev_tail, mcap
 
 
 def company_tab(c, g):
@@ -512,16 +513,17 @@ def serving_training_tab(g):
                f"the recurrence token-by-token costs ×{MEASURED['stepped_vs_scanned']:.0f} vs the scanned "
                "training step (same geometry, same box).")
 
-    section("Estimated TRAINING cost at equal quality (2026-08-24/25 kernels)")
+    section("Estimated TRAINING cost at equal quality (2026-08-29 re-anchor)")
     st.caption("Training compute is ~6·N·D FLOPs. At equal quality we need N/s parameters, "
                "where **s(N)** is the fit-derived equal-quality parameter ratio (same sealed "
                "2026-08-14 refit as the compute lever). Two token regimes fall out, differing by "
                "exactly one power of s: **compute-optimal** (Chinchilla, D ∝ N — the smaller model "
                "also trains on fewer tokens, so cost ratio = s²/r) and **fixed token budget** "
                "(data-constrained, D equal on both arms, so cost ratio = s/r). **r(T)** is the "
-               "step-time ratio at matched parameters: **MEASURED** at T=2,048 (×1.93, re-based "
-               "2026-08-25) and T=8,192 (×1.79), **MODELED** beyond from the per-token cost form "
-               "below (the B4/T32,768 ~parity cell is retired as a batch-occupancy artifact). "
+               "step-time ratio at matched parameters: **MEASURED** at T=2,048 (×1.72, the "
+               "2026-08-29 clean-wall position of record) and T=8,192 (×1.79 at B4, "
+               "artifact-flagged), **MODELED** beyond from the per-token cost form below "
+               "(the B4/T32,768 ~parity cell is retired as a batch-occupancy artifact). "
                "Above 1× we are cheaper to train to the same quality.")
     _tc_ctx = (2048, 8192, 32768, 262144)
     _tc_scales = (1_000_000_000, 10_000_000_000, 100_000_000_000,
@@ -543,12 +545,14 @@ def serving_training_tab(g):
         "\\* 256k is **MODELED**. r(T) now comes from the per-token cost form rather than a "
         "constant ratio decay: the transformer pays `base + attn·T` per token (FlashAttention is "
         "linear per token, quadratic over the sequence) while our recurrent state is O(1), so our "
-        "per-token cost is FLAT — the earlier +5.8% per 4× on our side is retired as a B4 "
-        "batch-occupancy artifact (2026-08-25), and the B4/T32,768 ~parity cell that shared it is "
-        "retired with it. `base` and `attn` are fitted to the 2k and 8k cells; the flat model gives "
+        "per-token cost is FLAT — now MEASURED, not inferred: BDM backward per-token is flat in T "
+        "(3.27–3.31 µs/tok, spread 1.4%, across 8× context; tsweep d4096 n=25) while the transformer's "
+        "rises +66%, and decode is flat +0.83% over 128× context. The B4/T32,768 ~parity cell stays "
+        "retired (90.5% an h-grid occupancy effect: B·n_blocks = 124 < 132 SMs at B4). `base` and "
+        "`attn` are fitted to the 2k and 8k cells; the flat model gives "
         f"r(32,768) = {training_step_ratio(32768):.2f} and puts the crossover at "
-        f"T ≈ {training_context_crossover():,.0f} (PROJECTED — the bucket-attribution re-measurement "
-        f"is owed upstream). The old constant-decay curve is kept as the CONSERVATIVE bound "
+        f"T ≈ {training_context_crossover():,.0f} (PROJECTED for this frame; independently measured "
+        f"21–24k @ B4 / ~16k @ B16 on H100 d4096). The old constant-decay curve is kept as the CONSERVATIVE bound "
         f"and is far too pessimistic past 32k (it says ×"
         f"{training_step_ratio(262144, mode='constant_decay'):.2f} at 256k where the cost model says ×"
         f"{training_step_ratio(262144):.2f}) because holding a growth ratio constant assumes the "
@@ -660,12 +664,12 @@ def serving_training_tab(g):
                "tracks it. Our decode cost is flat in context and the transformer's is linear, so "
                "the decode advantage is linear in E[context] and mixing contexts carries no "
                "averaging penalty. **Training is excluded** — but by much less than it used to be. "
-               "Re-based 2026-08-24/25 (one GH200, single layer, fwd+bwd, bf16, checkpointing off both "
+               "Re-based 2026-08-24/25/29 (one GH200, single layer, fwd+bwd, bf16, checkpointing off both "
                f"arms, modern transformer block): the transformer is ×{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f} "
                f"faster at T=2,048 and ×{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f} at T=8,192, "
                "the B4/T32,768 ~parity cell is retired as a batch-occupancy artifact and the flat "
-               "per-token model puts the crossover at T≈17k (PROJECTED; T≈88k pre-campaign). It read "
-               "×6.12 the same morning (×5.3–9.6 on the older d1152 sweep). "
+               "per-token model puts the crossover at T≈13k (PROJECTED; measured 21–24k @ B4 on d4096; "
+               "T≈88k pre-campaign). It read ×6.12 on the morning of 2026-08-24 (×5.3–9.6 on the older d1152 sweep). "
                "Setting a training share above ~0.30 now takes the blend below 1; that threshold was "
                "~0.06 before the kernel campaign.")
 
@@ -674,7 +678,7 @@ def serving_training_tab(g):
                "lane the competition actually serves in — with parameter counts exactly matched: "
                "1 layer / batch 16, one H100, 2026-07-21. The fp32 full-model sweep is retired to "
                "the Evidence tab as a scope reference. **These are PRE-CAMPAIGN kernels** — the lane "
-               "has not been re-run since the 2026-08-24/25 megakernel work banked ×3.45 on our own arm, "
+               "has not been re-run since the 2026-08-24..29 megakernel work banked ×3.94 on our own arm, "
                "so the Today lever below is conservative by construction; the realized speedup is "
                "carried in the Ceiling scenario, not here.")
     prow = []
@@ -803,18 +807,19 @@ def methodology_tab(g):
 
 **Engine.** A GPU is ~60% memory / ~40% compute by cost. The cost-weighted reduction is Amdahl —
 floored by the least-reduced component, compute. At the **Today** defaults (memory ×100, FLOPs ×9.24)
-the residual is ~0.6% + 4.3% → **~20×**; the **Ceiling** lever (measured prefill ×4.02 × 6.17
-campaign speedup = ×24.8) gives **~45×**. Multiplying the levers (100×·9.2× ≈ 900×) is *not*
-physical: cost is additive, not multiplicative. The ×6.17 was a flat ×5.5 assumption until
-2026-08-24; it is now **×3.45 measured** (already banked; 2k ledger-of-record receipt re-based
-2026-08-25) × **×1.79 target** (the funded 8k-win gate).
+the residual is ~0.6% + 4.3% → **~20×**; the **Ceiling** lever (measured prefill ×4.02 × 7.03
+campaign speedup = ×28.2) gives **~50×**. Multiplying the levers (100×·9.2× ≈ 900×) is *not*
+physical: cost is additive, not multiplicative. The ×7.03 was a flat ×5.5 assumption until
+2026-08-24; it is now **×3.94 measured** (already banked; 2k clean-wall position of record
+2026-08-29, 101.737 vs 59.268 ms) × **×1.79 target** (the funded 8k-win gate).
 
 **Measured tier (default) — the workload mix.** A single compute number cannot represent training,
 prefill and decode: at today's kernel maturity they point in *opposite* directions. Training is still a
-loss at short sequence, but a much smaller one since the 2026-08-24/25 kernel re-base: the transformer is
-**×1.93 cheaper per step at T=2,048** and **×1.79 at T=8,192**; the B4/T32,768 ~parity cell is retired
-as a batch-occupancy artifact and the flat per-token model puts the crossover at **T≈17k** (PROJECTED,
-from T≈88k pre-campaign). (It read ×6.12 the same morning,
+loss at short sequence, but a much smaller one since the 2026-08-24..29 kernel re-base: the transformer is
+**×1.72 cheaper per step at T=2,048** (the 2026-08-29 clean-wall position of record) and **×1.79 at
+T=8,192** (B4, artifact-flagged); the B4/T32,768 ~parity cell is retired as a batch-occupancy artifact
+and the flat per-token model puts the crossover at **T≈13k** (PROJECTED; measured 21–24k @ B4 on d4096,
+from T≈88k pre-campaign). (It read ×6.12 on the morning of 2026-08-24,
 and ×5.3–×9.6 on the older d1152 sweep.) Prefill crosses over near 65k context. Decode, **re-based
 2026-08-14**, crosses over near
 **30k context** — and only on per-GPU aggregate throughput, never per token. So the lever is computed
@@ -832,16 +837,16 @@ the blend by that ratio: ×2.19 MEASURED × ×4.22 **FIT-DERIVED** = ×9.24 → 
 receipt's own words for the second factor: *a projection of the two fits, not a measurement* — every
 point past ~1B extrapolates beyond the measured rungs.
 
-The counterweight is measured and points the other way, though it moved a long way on 2026-08-24/25: on
+The counterweight is measured and points the other way, though it moved a long way over 2026-08-24..29: on
 one GH200, one layer, fwd+bwd, bf16, checkpointing off both arms, against a *modern* transformer block
 (24 query / 4 KV heads, head_dim 256, RoPE 64, gated attention), a bAttention training step costs
-**×1.93 more at T=2,048** (116.0 vs 60.0 ms, the 2026-08-25 ledger-of-record receipt) and **×1.79 at
-T=8,192** (148.4 vs 83.1 ms) — forward ×1.82, backward ×2.35 (the 2026-08-24 split; the re-based 2k
-cell has no new split). It cost 400.4 ms on the morning of 2026-08-24 (×6.12), so the megakernel
-campaign banked **×3.45** (×2.86 of it in a day); the older ×6.46 figure (8,979 vs 1,389 ms/step,
-d1536/27 layers, fp16, 601-step protocol) is a pre-campaign receipt and is retired as a headline. At
-equal quality the T=2,048 figure becomes ×0.46 — i.e. a win — but at *matched size and short context* it
-is still a loss, so the serving
+**×1.72 more at T=2,048** (clean-wall 101.737 ± 0.609 vs 59.268 ± 0.381 ms, n=8 — the 2026-08-29
+position of record) and **×1.79 at T=8,192** (148.4 vs 83.1 ms, B4, artifact-flagged) — forward ×1.82,
+backward ×2.35 (the 2026-08-24 split; the re-anchored 2k cell has no new split). It cost 400.4 ms on
+the morning of 2026-08-24 (×6.12), so the megakernel campaign banked **×3.94** (×2.86 of it in a day);
+the older ×6.46 figure (8,979 vs 1,389 ms/step, d1536/27 layers, fp16, 601-step protocol) is a
+pre-campaign receipt and is retired as a headline. At equal quality the T=2,048 figure becomes ×0.41 —
+i.e. a win — but at *matched size and short context* it is still a loss, so the serving
 claim continues to exclude training. Training **peak memory** runs against us the same way and by a
 similar amount: **×1.58 at T=2,048** (17,087.5 vs 10,823.6 MiB), ×1.57 at T=8,192, from ×2.83 that
 morning. That is *training* memory and is a different quantity from the ÷100 lever above, which is
@@ -912,7 +917,7 @@ non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 
 
 **Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. **Today** (quality-matched
 at 1T, ~20×, the default): spend cut ~\$159B → burn ~−\$136B (~\$2.6T capitalized at the 6% rate; global
-est ~\$3.3T FY25, ~\$7.6T FY26). On FY2026 guidance the cut grows to ~\$366B. **Ceiling** (~45×): ~\$163B
+est ~\$3.3T FY25, ~\$7.6T FY26). On FY2026 guidance the cut grows to ~\$366B. **Ceiling** (~50×): ~\$164B
 FY25. The cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying capex, shares
 and revenue never move.
 
@@ -936,7 +941,7 @@ st.title("AI Capex Efficiency")
 st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage "
            "across the 6 largest AI-capex spenders + a global estimate. Two scenarios: **Today** "
            "(memory ÷100 + compute ×9.24 → ~20× cost-weighted) and **Ceiling** (the kernel "
-           "campaign lands, ×24.8 → ~45×). Set the workload and scenario in the sidebar; derivations live in "
+           "campaign lands, ×28.2 → ~50×). Set the workload and scenario in the sidebar; derivations live in "
            "the **Methodology** and **Serving·Training** tabs. "
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
