@@ -1,4 +1,4 @@
-"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x28.2 (CEILING).
+"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x793 (TODAY) / x816 (CEILING).
 
 Layout:
   - Totals      : front page, all-company roll-up (live) + GLOBAL estimate row
@@ -13,13 +13,17 @@ Layout:
   - Evidence    : BOM split, accelerator-share data, own-silicon TCO, filing top-lines
   - Methodology : steps, caveats, sources
 
-Engine: a GPU is ~60% memory / ~40% compute by cost. TODAY (default): memory x100
-+ FLOPs x9.24 (measured blend x2.19 x fit-derived equal-quality parameter ratio
-x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x28.2 (measured prefill x4.02
-x 7.03 campaign speedup) -> ~50x. Floored by compute. NOT 100x. RE-BASED 2026-08-24/
-25/29: that x7.03 was a flat x5.5 assumption; it is now x3.936 MEASURED (2k clean-
-wall 101.737 vs 59.268 ms, the 2026-08-29 position of record) x x1.786 TARGET (the
-funded 8k-win gate).
+Engine: a GPU is ~60% memory / ~40% compute by cost. RE-BASED 2026-09-01 (user
+ruling: fold in the banked kernel results and the aggregate-decode estimate;
+the pre-campaign x9.24 -> ~20x / x28.2 -> ~50x family is RETIRED). TODAY
+(default): memory x100 + FLOPs x793 (full-workload serving lever — decode
+2.5 ms/token x 64 streams, an ESTIMATE with the aggregate-decode receipt
+PENDING, prefill at the BANKED x3.936 — x the fit-derived equal-quality
+parameter ratio x4.22 at 1T) -> ~x154 cost-weighted. CEILING: FLOPs x816
+(same lever, prefill at the full x7.03 maturity factor = x3.936 MEASURED
+x x1.786 TARGET, the funded 8k-win gate) -> ~x154. Both are MEMORY-floored;
+the scenarios differ ~3% in the FLOPs lever and are within rounding in
+dollars. NOT 100x times 793x — cost is additive, not multiplicative.
 
 Every output is a LIVE FORMULA. Colors: yellow = assumption (a lever; each maps to a
 slider in the Streamlit app), green = disclosed filing/market data, blue = derived.
@@ -31,7 +35,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from ai_capex_model import (  # single source of truth for defaults
     GLOBALS, COMPANIES,
-    CEILING_FLOP_LEVER, CEILING_PREFILL_SPEEDUP,
+    CEILING_PREFILL_SPEEDUP,
+    TODAY_FLOP_LEVER_20260901, CAMPAIGN_LANDED_FLOP_LEVER,
+    CAMPAIGN_LANDED_20260831, DECK_DEPLOYMENT_SCALE,
     KERNEL_CAMPAIGN_20260824,
     KERNEL_SPEEDUP_REALIZED_20260824, KERNEL_SPEEDUP_REMAINING_TARGET,
     param_matching_gain, training_cost_saving,
@@ -127,16 +133,18 @@ def build_inputs(inp):
         ),
         (
             "FLOPs reduction factor",
-            # LIVE: TODAY scenario = the ServingTraining workload blend x the
+            # LIVE: TODAY scenario = the full-workload serving lever x the
             # equal-quality parameter ratio (Inputs rows 23-25). Overtype with
             # =B25 for CEILING, or any number to pin the lever.
             "=$B$24",
             "x",
-            "TODAY scenario (default) = x9.24: the measured workload blend x2.19 (10:1 input:output, "
-            "64k context; prefill x1.17, decode x2.20 on the memory ceiling; training excluded) x the "
-            "fit-derived equal-quality parameter ratio x4.22 at 1T (rows 23-25 below). Overtype with "
-            "=B25 for the CEILING scenario (x28.2 = measured prefill x4.02 x 7.03 campaign speedup), or "
-            "any number. See ServingTraining for the blend.",
+            "TODAY scenario (default, RE-BASED 2026-09-01) = x793: the full-workload serving lever "
+            "(decode 2.5 ms/token x 64 resident streams — an ESTIMATE, aggregate-decode receipt "
+            "PENDING — prefill at the BANKED x3.936 campaign speedup) x the fit-derived equal-quality "
+            "parameter ratio x4.22 at 1T (rows 23-25 below). Overtype with =B25 for the CEILING "
+            "scenario (x816 = same lever, prefill at the full x7.03 maturity factor), or any number. "
+            "The pre-campaign x9.24 lever is RETIRED 2026-09-01 (measured on kernels that no longer "
+            "exist). See ServingTraining for the measured background blend.",
             INPUT_FILL,
         ),
         (
@@ -255,7 +263,7 @@ def build_inputs(inp):
         "1 / residual. The realistic $ reduction used everywhere.",
         wrap=True,
     )
-    header(inp, 22, "SCENARIOS (2026-08-17 ruling) — TODAY (default) vs CEILING", span=4)
+    header(inp, 22, "SCENARIOS (2026-09-01 ruling) — TODAY (default) vs CEILING (campaign landed)", span=4)
     put(inp, 23, 1, "Equal-quality parameter ratio at 1T")
     put(inp, 23, 2, 4.2185, fmt="0.00", fill=INPUT_FILL, border=True)
     put(inp, 23, 3, "x")
@@ -263,19 +271,32 @@ def build_inputs(inp):
         "FIT-DERIVED (sealed 2026-08-14 refit): bAttention matches the transformer fit's quality on "
         "23.7% of the params at 1T -> x4.22 compute per token at equal quality. 84.2% at 1B, 55.2% at "
         "10B, 36.2% at 100B, 15.5% at 10T (x6.44). A projection of the two fits, not a measurement.", wrap=True)
-    put(inp, 24, 1, "TODAY compute lever = blend x ratio", bold=True)
-    put(inp, 24, 2, "=ServingTraining!$B$28*$B$23", fmt="0.00", fill=CALC_FILL, border=True, bold=True)
+    # The serving-only halves of the two levers (lever / equal-quality ratio at
+    # 1T), model-computed so the ratio knob B23 stays LIVE: B24/B25 = these x B23.
+    _today_serving = TODAY_FLOP_LEVER_20260901 / param_matching_gain(DECK_DEPLOYMENT_SCALE)
+    _ceil_serving = CAMPAIGN_LANDED_FLOP_LEVER / param_matching_gain(DECK_DEPLOYMENT_SCALE)
+    put(inp, 24, 1, "TODAY compute lever = serving lever x ratio", bold=True)
+    put(inp, 24, 2, f"={_today_serving:.4f}*$B$23", fmt="0.00", fill=CALC_FILL, border=True, bold=True)
     put(inp, 24, 3, "x")
-    put(inp, 24, 4, "B3 (the FLOPs lever) points here by default.", wrap=True)
-    put(inp, 25, 1, "CEILING compute lever")
-    put(inp, 25, 2, CEILING_FLOP_LEVER, fmt="0.00", fill=INPUT_FILL, border=True)
+    put(inp, 24, 4,
+        f"B3 (the FLOPs lever) points here by default. The x{_today_serving:.1f} serving half is "
+        f"model-computed (campaign_landed_flop_lever): decode "
+        f"{CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token x "
+        f"{CAMPAIGN_LANDED_20260831['streams_per_gpu']} resident streams — an ESTIMATE, the "
+        f"aggregate-decode receipt is PENDING — with prefill at the BANKED "
+        f"x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} (our own step went 400.4 -> 101.7 ms at B16/T2048; "
+        f"2026-08-29 clean-wall position of record); transformer side stays the measured 1/context "
+        f"law at its KV ceiling, 128k E[context].",
+        wrap=True)
+    put(inp, 25, 1, "CEILING compute lever (campaign landed)")
+    put(inp, 25, 2, f"={_ceil_serving:.4f}*$B$23", fmt="0.00", fill=CALC_FILL, border=True)
     put(inp, 25, 3, "x")
     put(inp, 25, 4,
-        f"Measured prefill x4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) x {CEILING_PREFILL_SPEEDUP:.2f} "
-        f"campaign speedup. RE-BASED 2026-08-24/25/29: that factor is x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED "
-        f"(already banked: our own step went 400.4 -> 101.7 ms at B16/T2048; 2026-08-29 clean-wall position of record) x "
-        f"x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded 8k-win gate, no receipt yet); it was a flat "
-        f"x5.5 assumption before. Overtype B3 with =B25 to run the workbook at the ceiling (~50x cost-weighted).",
+        f"Same full-workload lever with prefill at the full x{CEILING_PREFILL_SPEEDUP:.2f} maturity factor "
+        f"= x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED (already banked) x "
+        f"x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded 8k-win gate, no receipt yet). "
+        f"Decode-dominated, so it sits only ~3% above TODAY. Overtype B3 with =B25 to run the workbook "
+        f"at the ceiling (~x154 cost-weighted — memory-floored; dollars move within rounding).",
         wrap=True)
 
 
@@ -788,8 +809,8 @@ def build_sensitivity(sens):
     # at the conservative dc_scale=0; NOT total capex, which would overstate the avoided spend)
     SXCAP, SXOPX = "SpaceX!$B$12", "SpaceX!$B$26"
     cols = [
-        ("TODAY (~20x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$24)"),
-        ("CEILING (~50x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
+        ("TODAY (~154x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$24)"),
+        ("CEILING (~154x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
         ("Cost-weighted (live)", RED),
     ]
     put(sens, 2, 1, "Metric", bold=True)
@@ -1063,11 +1084,11 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x28.2 -> ~50x (re-based 2026-08-24/25/29: x3.936 measured x x1.786 target, was a flat x5.5 assumption).",
+            "Engine: GPU cost ~60% memory / ~40% compute. RE-BASED 2026-09-01: TODAY (default): memory x100 + FLOPs x793 (full-workload serving lever — decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the banked x3.936 — x equal-quality ratio x4.22 at 1T) -> ~x154 cost-weighted (Inputs B20). CEILING: FLOPs x816 (prefill at the full x7.03 maturity factor = x3.936 measured x x1.786 target) -> ~x154.",
             False,
         ),
         (
-            "  Floored by the least-reduced part (compute). Neither alone helps (mem-only ~2.5x, FLOP-only ~1.5x).",
+            "  Floored by the least-reduced part — at these levers that is MEMORY (/100), so the two scenarios land within rounding of each other. The pre-campaign family (x9.24 -> ~20x / x28.2 -> ~50x) is RETIRED 2026-09-01: measured on kernels that no longer exist.",
             False,
         ),
         ("", False),
@@ -1110,7 +1131,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~20x TODAY, ~50x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
+            "- Cost-weighted reduction ~x154 TODAY and ~x154 at the CEILING — memory-floored at /100; the levers differ ~3% but the reduction ~0.3%.",
             False,
         ),
         (
@@ -1118,15 +1139,15 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- With our architecture: spend cut ~$159B -> burn shrinks to ~ -$136B/yr (~42% of AI spend cut).",
+            "- With our architecture: spend cut ~$166B -> burn shrinks to ~ -$129B/yr (~44% of AI spend cut).",
             False,
         ),
         (
-            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$366B/yr (~$6.1T). Ceiling: ~$164B FY25.",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$166B/yr (~$2.8T capitalized); FY26 r/r ~$382B/yr (~$6.4T). Ceiling: within rounding of Today (the cut saturates).",
             False,
         ),
         (
-            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.3T, FY26 ~$7.6T capitalized. Clearly an estimate.",
+            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.5T, FY26 ~$8.0T capitalized. Clearly an estimate.",
             False,
         ),
         ("", False),
@@ -1231,11 +1252,12 @@ def build_serving_training(ws):
     header(ws, 1,
            "SERVING & TRAINING — measured 2026-08-07/08 (2/4/8 x H100), priced at the CostLadder rent mid "
            f"(${SERVING['gpu_hr']:.2f}/GPU-hr). Source: bdm/docs/deck/build/derived.json (keys in ai_capex_model.MEASURED).")
-    # --- LIVE workload block ------------------------------------------------
-    # Fixed rows on purpose: Inputs!B3 (flop_factor) is a formula pointing at
-    # B28 below, so editing B7/B8/B9 recomputes the ENTIRE workbook the same way
-    # the sidebar does in the Streamlit app.
-    header(ws, 4, "WORKLOAD — edit the yellow cells; every sheet recomputes")
+    # --- measured workload block --------------------------------------------
+    # Fixed rows on purpose. Since the 2026-09-01 re-base this blend is
+    # measured BACKGROUND (pre-campaign kernels): Inputs!B24/B25 carry the
+    # model-computed full-workload levers and Inputs!B3 points at B24, so
+    # editing B7/B8/B9 moves this sheet but no longer drives the workbook.
+    header(ws, 4, "WORKLOAD — measured pre-campaign blend (background; the workbook lever lives at Inputs B24/B25)")
     put(ws, 5, 1,
         "Training, prefill and decode point in opposite directions at today's kernel maturity, so the "
         "compute lever is blended over the workload rather than fixed. Cost per GENERATED token = "
@@ -1315,7 +1337,7 @@ def build_serving_training(ws):
     put(ws, 28, 2,
         "=IF($B$9>0,1/($B$9/$B$17+(1-$B$9)/($B$26/$B$27)),$B$26/$B$27)",
         "0.00", fill=CALC_FILL, border=True, bold=True)
-    put(ws, 28, 6, "Inputs!B24 (TODAY lever) = this x the equal-quality parameter ratio; Inputs!B3 follows it, so this drives the whole workbook.", wrap=True)
+    put(ws, 28, 6, "Measured pre-campaign workload blend (2026-08-14 basis), kept as BACKGROUND. RETIRED as the workbook lever 2026-09-01: Inputs!B24/B25 now carry the model-computed full-workload levers (decode 2.5 ms x 64 streams estimate; this cell no longer feeds Inputs!B3).", wrap=True)
     put(ws, 29, 1, "  of which: prefill advantage")
     put(ws, 29, 2, "=($B$7/$B$24)/($B$7/$B$25)", "0.00", fill=CALC_FILL, border=True)
     put(ws, 30, 1, "  of which: decode advantage")
@@ -1392,7 +1414,7 @@ def build_serving_training(ws):
         r += 1
     r += 1
 
-    header(ws, r, "The compute lever — blended over the workload (sets flop_factor)")
+    header(ws, r, "The measured workload blend (pre-campaign background; the workbook lever lives at Inputs B24/B25)")
     r += 1
     put(ws, r, 1,
         "Training, prefill and decode point in OPPOSITE directions at today's kernel maturity, so a "
@@ -1410,7 +1432,9 @@ def build_serving_training(ws):
         "transformer decodes a token more cheaply than we do - and it crosses 1 at ~30k context, below "
         "which the transformer wins. Granting it KV/8 divides our decode lever by 8. A training share "
         "above ~0.30 also takes the blend below 1 (it was ~0.06 before the kernel re-base). "
-        "All are reachable in the live model.",
+        "All are reachable in the live model. NOTE (2026-09-01): this blend was measured on the "
+        "PRE-CAMPAIGN kernels and no longer sets the workbook's flop_factor — the scenario levers at "
+        "Inputs B24/B25 fold in the banked kernel results and the aggregate-decode estimate.",
         wrap=True)
     r += 2
 
