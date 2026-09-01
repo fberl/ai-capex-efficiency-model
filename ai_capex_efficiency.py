@@ -1,4 +1,4 @@
-"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x24.8 (CEILING).
+"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x9.24 (TODAY) / x28.2 (CEILING).
 
 Layout:
   - Totals      : front page, all-company roll-up (live) + GLOBAL estimate row
@@ -15,11 +15,11 @@ Layout:
 
 Engine: a GPU is ~60% memory / ~40% compute by cost. TODAY (default): memory x100
 + FLOPs x9.24 (measured blend x2.19 x fit-derived equal-quality parameter ratio
-x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x24.8 (measured prefill x4.02
-x 6.17 campaign speedup) -> ~45x. Floored by compute. NOT 100x. RE-BASED 2026-08-24,
-AGAIN 2026-08-25: that x6.17 was a flat x5.5 assumption; it is now x3.452 MEASURED
-(banked by the megakernel campaign; 2k ledger-of-record receipt 2026-08-25) x
-x1.786 TARGET (the funded 8k-win gate).
+x4.22 at 1T) -> ~20x cost-weighted. CEILING: FLOPs x28.2 (measured prefill x4.02
+x 7.03 campaign speedup) -> ~50x. Floored by compute. NOT 100x. RE-BASED 2026-08-24/
+25/29: that x7.03 was a flat x5.5 assumption; it is now x3.936 MEASURED (2k clean-
+wall 101.737 vs 59.268 ms, the 2026-08-29 position of record) x x1.786 TARGET (the
+funded 8k-win gate).
 
 Every output is a LIVE FORMULA. Colors: yellow = assumption (a lever; each maps to a
 slider in the Streamlit app), green = disclosed filing/market data, blue = derived.
@@ -135,7 +135,7 @@ def build_inputs(inp):
             "TODAY scenario (default) = x9.24: the measured workload blend x2.19 (10:1 input:output, "
             "64k context; prefill x1.17, decode x2.20 on the memory ceiling; training excluded) x the "
             "fit-derived equal-quality parameter ratio x4.22 at 1T (rows 23-25 below). Overtype with "
-            "=B25 for the CEILING scenario (x24.8 = measured prefill x4.02 x 6.17 campaign speedup), or "
+            "=B25 for the CEILING scenario (x28.2 = measured prefill x4.02 x 7.03 campaign speedup), or "
             "any number. See ServingTraining for the blend.",
             INPUT_FILL,
         ),
@@ -272,16 +272,17 @@ def build_inputs(inp):
     put(inp, 25, 3, "x")
     put(inp, 25, 4,
         f"Measured prefill x4.02 (bf16 parameter-matched, d512/1M, 2026-07-21) x {CEILING_PREFILL_SPEEDUP:.2f} "
-        f"campaign speedup. RE-BASED 2026-08-24, AGAIN 2026-08-25: that factor is x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED "
-        f"(already banked: our own step went 400.4 -> 116.0 ms at B16/T2048; 2026-08-25 ledger-of-record 2k receipt) x "
+        f"campaign speedup. RE-BASED 2026-08-24/25/29: that factor is x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED "
+        f"(already banked: our own step went 400.4 -> 101.7 ms at B16/T2048; 2026-08-29 clean-wall position of record) x "
         f"x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded 8k-win gate, no receipt yet); it was a flat "
-        f"x5.5 assumption before. Overtype B3 with =B25 to run the workbook at the ceiling (~45x cost-weighted).",
+        f"x5.5 assumption before. Overtype B3 with =B25 to run the workbook at the ceiling (~50x cost-weighted).",
         wrap=True)
 
 
 def build_company(ws, name, c25, c26, mcap, ai_rev, basis, sources=()):
     """c25/c26 = (total_capex, infra_share, server_share, accel_share) for FY25/FY26.
-    ai_rev = (revenue_FY25, revenue_FY26). sources = [(label, url), ...]."""
+    ai_rev = (revenue_FY25, revenue_FY26[, revenue_FY27_est -- ignored here,
+    the workbook stays a FY25+FY26 build]). sources = [(label, url), ...]."""
     widths(ws, {"A": 34, "B": 12, "C": 12, "D": 54})
     header(
         ws,
@@ -482,7 +483,7 @@ def build_company(ws, name, c25, c26, mcap, ai_rev, basis, sources=()):
         put(ws, r, 4, note, wrap=True)
 
     header(ws, 31, "AI ECONOMICS (cash basis: AI revenue - AI capex - AI opex)", span=4)
-    rev25, rev26 = ai_rev
+    rev25, rev26 = ai_rev[0], ai_rev[1]  # fy27 element (charts-only) ignored
     put(ws, 32, 1, "AI revenue ($B)")
     put(ws, 32, 2, rev25, fmt="#,##0.0", fill=INPUT_FILL, border=True)
     put(ws, 32, 3, rev26, fmt="#,##0.0", fill=INPUT_FILL, border=True)
@@ -788,7 +789,7 @@ def build_sensitivity(sens):
     SXCAP, SXOPX = "SpaceX!$B$12", "SpaceX!$B$26"
     cols = [
         ("TODAY (~20x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$24)"),
-        ("CEILING (~45x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
+        ("CEILING (~50x)", "1/(Inputs!$B$4/Inputs!$B$2+(1-Inputs!$B$4)/Inputs!$B$25)"),
         ("Cost-weighted (live)", RED),
     ]
     put(sens, 2, 1, "Metric", bold=True)
@@ -1062,7 +1063,7 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x24.8 -> ~45x (re-based 2026-08-24/25: x3.452 measured x x1.786 target, was a flat x5.5 assumption).",
+            "Engine: GPU cost ~60% memory / ~40% compute. TODAY (default): memory x100 + FLOPs x9.24 (blend x2.19 x equal-quality parameter ratio x4.22 at 1T) -> ~20x cost-weighted (Inputs B20). CEILING: FLOPs x28.2 -> ~50x (re-based 2026-08-24/25/29: x3.936 measured x x1.786 target, was a flat x5.5 assumption).",
             False,
         ),
         (
@@ -1109,7 +1110,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~20x TODAY, ~45x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
+            "- Cost-weighted reduction ~20x TODAY, ~50x at the CEILING (NOT 100x; ~16-36x over memory share 45-82% at the Today lever).",
             False,
         ),
         (
@@ -1121,7 +1122,7 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$366B/yr (~$6.1T). Ceiling: ~$163B FY25.",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$159B/yr (~$2.6T capitalized); FY26 r/r ~$366B/yr (~$6.1T). Ceiling: ~$164B FY25.",
             False,
         ),
         (

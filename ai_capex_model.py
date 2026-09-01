@@ -9,8 +9,9 @@ reduction is 1 / (mem_share/mem_factor + compute_share/flop_factor), floored
 by the less-reduced component (compute). Two scenarios (2026-08-17 ruling):
 TODAY = memory /100 + the quality-matched compute lever (~x9.24 at 1T) ->
 ~20x; CEILING = memory /100 + the prefill-kernel-campaign lever
-(x4.02 measured x 6.17 campaign speedup = x24.8, CEILING_FLOP_LEVER) -> ~45x
-(RE-BASED AGAIN 2026-08-25 (3), see that paragraph below; was x20.5 -> ~39x).
+(x4.02 measured x 7.03 campaign speedup = x28.2, CEILING_FLOP_LEVER) -> ~50x
+(RE-BASED 2026-08-29/31 onto the review-verdicts position of record, 2k clean-wall
+101.737 vs 59.268 ms; before that 2026-08-25 -> ~45x, 2026-08-24 -> ~39x).
 
 RE-BASED 2026-08-24 (kernels). The CEILING's campaign speedup used to be a flat
 x5.5 ASSUMPTION ("mid of the 5-6x target"). It is now MEASURED-realized x
@@ -27,12 +28,14 @@ RE-BASED AGAIN 2026-08-25 (3), on TWO fronts.
 (a) The 2k cell itself moved: a newer receipt (tests/_w1_r0_gh200.jsonl rows
 21-24, cited in ~/bdm-prefill/docs/exec_projection_20260825.md) reads BDM
 115.9910 ms / TF 59.966 ms at B16/T2048 -- battn_ms_2k and tf_ms_2k are
-RE-BASED to this (was 140.216 / 62.984). step_ratio_2k moves 2.226 -> 1.934,
-TRAIN_ADVANTAGE_SHORT_SEQ 0.449 -> 0.517, and realized_speedup (our own
-before/after) 2.856 -> 3.452, which lifts CEILING_PREFILL_SPEEDUP 5.10 -> 6.17
-and CEILING_FLOP_LEVER 20.49 -> 24.77 (ceiling_reduction ~39x -> ~45x; the
-dollar ceiling barely moves, $163.0B -> $163.4B, because it is memory-bound-
-dominated at these magnitudes, not flop-bound). The 8k cell (battn_ms_8k,
+RE-BASED to this (was 140.216 / 62.984). step_ratio_2k moved 2.226 -> 1.934,
+TRAIN_ADVANTAGE_SHORT_SEQ 0.449 -> 0.517, realized_speedup 2.856 -> 3.452.
+[SUPERSEDED 2026-08-29/31: the review-verdicts position of record moves the 2k
+cell again, to clean-wall 101.737 +/- 0.609 vs TF 59.268 +/- 0.381 (n=8) ->
+step_ratio_2k 1.717, TRAIN_ADVANTAGE_SHORT_SEQ 0.583, realized x3.936,
+CEILING_PREFILL_SPEEDUP 7.03, CEILING_FLOP_LEVER 28.24, ceiling ~50x; the
+dollar ceiling barely moves ($163.7B) because it is memory-bound-dominated at
+these magnitudes, not flop-bound.] The 8k cell (battn_ms_8k,
 step_ratio_8k, target_8k_gap_remaining) is UNCHANGED -- still the 2026-08-24
 number, no newer receipt for it yet.
 (b) ctx_growth_per_4x_battn (the +5.8%-per-4x slope derived from the SAME
@@ -43,7 +46,9 @@ sequential chunk chain is 4x deeper with 4x less batch to hide it), not a
 real per-token FLOP cost -- per-token FLOPs are exactly flat (no attention
 term); at production batch the flat model applies. The B4/T32,768 "~parity"
 cell shares the same artifact and is retired as the crossover anchor;
-TRAIN_CROSSOVER_TOKENS moves from the MEASURED 32,768 to a PROJECTED 16,943
+TRAIN_CROSSOVER_TOKENS moves from the MEASURED 32,768 to a PROJECTED ~17k
+(now ~13k on the 2026-08-29 anchor, and CORROBORATED by a measured d4096
+crossover: 21-24k @ B4 / ~16k @ B16 -- see TRAIN_CROSSOVER_TOKENS)
 (flat model, new 2k anchor). The proper bucket-attribution fix (isolating the
 artifact from the B4/T8192 cell, which would also correct step_ratio_8k) is
 OWED upstream and has not landed -- both of these are the flat/re-based model
@@ -95,11 +100,11 @@ this file's existing $/GPU-hour ladder.
 Compute lever: the prefill anchor is 4.02, from the bf16 parameter-matched
 prefill sweep (matched_d512_h100.json, 1 x H100, 2026-07-21) at T=1,048,576.
 Same lane: 3.83 at d1024/1M, 2.01 at d2048/262k. It also anchors the CEILING
-scenario: CEILING_FLOP_LEVER = 4.02 x 6.17 campaign speedup = 24.77 (RE-BASED
-AGAIN 2026-08-25 (3); was x5.10 campaign speedup = 20.49). Note that the 4.02
-was measured on the PRE-CAMPAIGN kernels and has not been re-run since
+scenario: CEILING_FLOP_LEVER = 4.02 x 7.03 campaign speedup = 28.24 (RE-BASED
+2026-08-29/31; was 24.77 on the 08-25 cell, 20.49 on the 08-24 one). Note that
+the 4.02 was measured on the PRE-CAMPAIGN kernels and has not been re-run since
 2026-08-24, so the TODAY lever is conservative by construction; the realized
-x3.452 lives in the CEILING factor, not in the TODAY one.
+x3.936 lives in the CEILING factor, not in the TODAY one.
 
 The comparison exists in two lanes:
 
@@ -127,7 +132,7 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 9.24,  # FLOPs reduction (x) — the TODAY lever: measured workload blend x2.19 (10:1 in:out, 64k context) x fit-derived equal-quality parameter ratio x4.22 at 1T = COMPUTE_LEVER_20260814 (cross-checked at import). CEILING is CEILING_FLOP_LEVER = 24.77 (measured prefill x4.02 x 6.17 campaign speedup: x3.452 MEASURED-realized, 2k cell re-based 2026-08-25, x x1.786 TARGET-remaining to 8k parity). Measured cluster TRAINING throughput is x1.39–x1.70 (see MEASURED)
+    "flop_factor": 9.24,  # FLOPs reduction (x) — the TODAY lever: measured workload blend x2.19 (10:1 in:out, 64k context) x fit-derived equal-quality parameter ratio x4.22 at 1T = COMPUTE_LEVER_20260814 (cross-checked at import). CEILING is CEILING_FLOP_LEVER = 28.24 (measured prefill x4.02 x 7.03 campaign speedup: x3.936 MEASURED-realized, 2k cell re-based 2026-08-29, x x1.786 TARGET-remaining to 8k parity). Measured cluster TRAINING throughput is x1.39–x1.70 (see MEASURED)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -149,8 +154,9 @@ COMPANIES = [
         "name": "Microsoft",
         "fy25": (88.0, 1.00, 0.50, 0.75),
         "fy26": (190, 1.00, 0.67, 0.75),
+        "fy27": (298, 1.00, 0.67, 0.75),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 3700,
-        "ai_rev": (30, 50),
+        "ai_rev": (30, 50, 75),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex incl leases ~$88B [DISCLOSED proxy]; FY26 ~$190B CY26 guide (Jul'26 restated "
         "to ~$175B capex+finance-leases on an accounting change -- the gross guide is kept here). "
         "Short-lived 'half'->'two-thirds' (CFO). Accel ~75% [BOM]. AI rev $37B run-rate (Q3 FY26).",
@@ -177,8 +183,9 @@ COMPANIES = [
         "name": "Alphabet",
         "fy25": (91.4, 1.00, 0.60, 0.67),
         "fy26": (185, 1.00, 0.60, 0.67),
+        "fy27": (250, 1.00, 0.60, 0.67),  # STREET EST: analyst (Morgan Stanley) up-to-$250B 2027; company flagged a further increase
         "mcap": 4250,
-        "ai_rev": (25, 40),
+        "ai_rev": (25, 40, 60),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex $91.4B [DISCLOSED]; FY26 $180-190B guide. 60% servers / 40% DC (CFO). "
         "Accel ~67% [BOM]. AI rev ESTIMATE (Cloud $70B run-rate, AI subset).",
         "sources": [
@@ -200,8 +207,9 @@ COMPANIES = [
         "name": "Amazon",
         "fy25": (128.3, 0.68, 0.65, 0.67),
         "fy26": (220, 0.70, 0.65, 0.67),
+        "fy27": (345, 0.70, 0.65, 0.67),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 2830,
-        "ai_rev": (12, 22),
+        "ai_rev": (12, 22, 33),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 cash capex $128.3B [DISCLOSED]; FY26 raised to ~$220B (Q2'26, 2026-07-30). "
         "AWS ~68-70% -> strips fulfillment. Accel ~67% [BOM]. AI rev >$15B AWS run-rate (Q1 FY26, Jassy).",
         "sources": [
@@ -223,8 +231,9 @@ COMPANIES = [
         "name": "Meta",
         "fy25": (72.2, 1.00, 0.65, 0.74),
         "fy26": (137.5, 1.00, 0.65, 0.74),
+        "fy27": (216, 1.00, 0.65, 0.74),  # STREET EST: FY26 guide mid x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 1490,
-        "ai_rev": (4, 8),
+        "ai_rev": (4, 8, 12),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex incl leases $72.2B [DISCLOSED]; FY26 $130-145B guide (mid 137.5). Accel ~74% [BOM]. "
         "AI rev DIRECT est ~$4B -- Meta's real AI payoff is INDIRECT ad-uplift (~$20B), not counted.",
         "sources": [
@@ -254,8 +263,9 @@ COMPANIES = [
         "name": "Oracle",
         "fy25": (21.2, 0.85, 0.75, 0.70),
         "fy26": (55.7, 0.90, 0.75, 0.70),
+        "fy27": (70, 0.90, 0.75, 0.70),  # DISCLOSED GUIDE: ~$70B net (up to $95B gross) -- the only real FY27 guide in the set
         "mcap": 433,
-        "ai_rev": (8, 15),
+        "ai_rev": (8, 15, 22),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex $21.2B [DISCLOSED 10-K]; FY26 ACTUAL $55.7B (reported 2026-06-10; FY27 guide "
         "~$70B net / up to $95B gross). Capex ~all OCI/GPU data centers. Accel ~70% [BOM]. AI rev = "
         "OCI/GPU cloud (IaaS ~$12B r/r Q4 FY25; AI subset, EST).",
@@ -278,8 +288,9 @@ COMPANIES = [
         "name": "SpaceX",
         "fy25": (12.7, 1.00, 0.79, 1.00),
         "fy26": (55, 1.00, 0.79, 1.00),
+        "fy27": (83, 1.00, 0.79, 1.00),  # EST: no guidance; x1.5 placeholder (xAI/Google compute deals ramp from 2027)
         "mcap": 1950,
-        "ai_rev": (0.3, 1),
+        "ai_rev": (0.3, 1, 1.5),  # fy27 EST
         "basis": "FY25 S-1 AI capex $12.7B [DISCLOSED]; FY26 ~$55B EST from H1'26 DISCLOSED $23.5B "
         "(Q1 $7.7B, Q2 $15.8B; 82.7% of total capex) + company guiding capex roughly flat Q3/Q4. "
         "~all accelerator (greenfield COLOSSUS I/II). AI rev ~0 today; Anthropic (up to $1.25B/mo) "
@@ -442,16 +453,26 @@ KERNEL_CAMPAIGN_20260824 = {
     # 59.966 ms at B16/T2048. The 8k cell (below) has NOT been re-based --
     # it is still the 2026-08-24 number, separately flagged as needing its
     # own bucket-attribution correction (see ctx_growth_per_4x_battn comment).
-    "battn_ms_2k": 115.9910,         # B16 / T2048 (2026-08-25 ledger of record)
-    "tf_ms_2k": 59.966,
-    "step_ratio_2k": 115.9910 / 59.966,   # = 1.934 — we are still SLOWER
-    "battn_ms_8k": 148.407,          # B4 / T8192 -- 2026-08-24, NOT re-based; bucket attribution owed
+    # RE-BASED AGAIN 2026-08-29 (position of record, review-verdicts corpus):
+    # clean-wall BDM 101.737 +/- 0.609 ms (2SE, n=8) vs TF 59.268 +/- 0.381,
+    # GH200, T2048/B16, ckpt-off, S=4 (reanchor_k2fzero_review_pass1.md; docs/
+    # reanchor_20260829.md:18-32, re-verified in ctxscale receipt audit A1).
+    # Supersedes the 2026-08-25 115.9910/59.966 ledger cell AND the interim
+    # 103.540/1.743 row.
+    "battn_ms_2k": 101.737,          # B16 / T2048 (2026-08-29 position of record)
+    "tf_ms_2k": 59.268,
+    "step_ratio_2k": 101.737 / 59.268,   # = 1.717 — we are still SLOWER
+    "battn_ms_8k": 148.407,          # B4 / T8192 -- 2026-08-24, NOT re-based; bucket attribution owed.
+    # NOTE 2026-08-31: the 8k-win gate bar in the box1meas frame is banked at
+    # ~73.6 ms (memory_parity_analysis.md), below this file's 83.076 TF cell --
+    # the frames differ (TF clean-wall moved 62.98 -> 59.27 at 2k); reconcile
+    # when the 8k cell is re-measured.
     "tf_ms_8k": 83.076,
     "step_ratio_8k": 148.407 / 83.076,   # = 1.786 -- same caveat as battn_ms_8k above
     # --- what the campaign moved, same day, same frame
     "battn_ms_2k_precampaign": 400.4,
     "step_ratio_2k_precampaign": 6.116,
-    "realized_speedup": 400.4 / 115.9910,  # = 3.452 — our arm vs our arm, using the 2026-08-25 2k number
+    "realized_speedup": 400.4 / 101.737,  # = 3.936 — our arm vs our arm, at the 2026-08-29 2k position of record
     # --- fwd / bwd split of the 2k cell
     "fwd_ratio": 1.82,
     "bwd_ratio": 2.35,
@@ -461,6 +482,16 @@ KERNEL_CAMPAIGN_20260824 = {
     "mem_ratio_2k": 17087.5 / 10823.6,   # = 1.579
     "mem_ratio_8k": 1.567,
     "mem_ratio_2k_precampaign": 2.829,
+    # NEWER BANKED POSITIONS 2026-08-29/30 (d3072 single layer, B16/T2048, bf16,
+    # ckpt-off, GH200; review-verdicts corpus): allocated-peak ratio 1.552
+    # (14,111.5 vs 9,095.6 MiB; reproduces at d4096/box-3 to 1.554), and the
+    # deadtape lever BANKED -1,736.0 MiB (14,111.5 -> 12,375.5, bit-equal,
+    # thrice-corroborated) -> ratio 1.361 at +1.5-2.0% step time. Memory is FLAT
+    # in context at matched tokens on BOTH sides (17,087.5 -> 16,970.0 / 9,095.6
+    # -> 9,098.6 across B16/T2048 -> B4/T8192). RISK: a pending fairness ruling
+    # may move the TF bar 9,095.6 -> 7,943.6 (lean-bwd) or 7,403.6 (both-sides
+    # fold), taking the ratio to ~1.776 -- do not quote memory parity as done.
+    "mem_ratio_2k_20260830_banked": 12375.5 / 9095.6,  # = 1.361 (deadtape lever landed, S=4 slab)
     # --- context scaling at MATCHED tokens per step, 2k -> 8k (4x context)
     # Our per-token cost is FLAT in context (no attention term); the transformer's
     # grows. RE-BASED 2026-08-25: the previously-used +5.8% per 4x on our side
@@ -468,10 +499,15 @@ KERNEL_CAMPAIGN_20260824 = {
     # per-token cost -- at B4 the BH-parallel grid underfills the SMs (124 < 132)
     # and the sequential chunk chain is 4x deeper with 4x less batch to hide it.
     # Per-token FLOPs are exactly flat; at production batch the flat model applies.
-    # Correction source: ~/bdm-prefill/docs/ledger_frame_20260825.md. The proper
-    # bucket-attribution fix (isolating the artifact from the B4/T8192 cell) is
-    # OWED upstream, not yet landed -- this is the flat model applied ahead of
-    # that receipt, not a re-measurement.
+    # Correction source: ~/bdm-prefill/docs/ledger_frame_20260825.md. The B4
+    # artifact is quantified: 90.5% an h-grid occupancy effect (B*n_blocks =
+    # 124 < 132 SMs at B4 -- a B effect, not a T cost; memory_parity_analysis).
+    # MEASURED 2026-08-29/31 (tsweep, box-3 H100 d4096, n=25): BDM BWD per-token
+    # is FLAT in T (3.27-3.31 us/tok, spread 1.4%, slope -2.4e-6) across 8x
+    # context while TF bwd rises 1.80 -> 2.99 us/tok (+66%); BDM fwd fits
+    # a + k/T (~1.34 us/tok + 6.4 ms/step fixed at B=4 -- amortization, not a
+    # negative context cost). Decode is likewise flat: 108.22 -> 109.12 ms/tok
+    # over 2k -> 262k (+0.83% over 128x). The flat model is now receipt-backed.
     "ctx_growth_per_4x_battn": 1.0,
     "ctx_growth_per_4x_tf": 1.319,
     "ratio_decay_per_4x": 1.0 / 1.319,  # = 0.758
@@ -506,12 +542,12 @@ KERNEL_CAMPAIGN_20260824 = {
 # kernel-campaign target"). It is now an explicit product of a MEASURED factor and
 # a TARGET factor, so the two halves can never be quoted as one measurement:
 #
-#   MEASURED  x3.452 already realized on our own arm (400.4 -> 115.9910 ms/step
-#             at B16/T2048, RE-BASED AGAIN 2026-08-25 onto the newer ledger-of-
-#             record 2k receipt; was x2.856 -> 140.216 ms/step on 2026-08-24)
+#   MEASURED  x3.936 already realized on our own arm (400.4 -> 101.737 ms/step
+#             at B16/T2048, RE-BASED 2026-08-29 onto the review-verdicts position
+#             of record; was x3.452 -> 115.991 on 08-25, x2.856 -> 140.216 on 08-24)
 #   TARGET    x1.786 remaining to transformer parity at 8k context -- the funded
 #             8k-win gate (T8192 step <= 83.076 ms). At 2k the remaining gap is
-#             now x1.934 (2026-08-25 number), so the full-campaign speedup brackets shift; the
+#             now x1.717 (2026-08-29 position of record), so the full-campaign speedup brackets shift; the
 #             CONSERVATIVE (8k) end is taken here.
 KERNEL_SPEEDUP_REALIZED_20260824 = KERNEL_CAMPAIGN_20260824["realized_speedup"]  # = 2.856 MEASURED
 KERNEL_SPEEDUP_REMAINING_TARGET = KERNEL_CAMPAIGN_20260824["target_8k_gap_remaining"]  # = 1.786 TARGET
@@ -588,7 +624,7 @@ PREFILL_FP32_D1152_TF_BATTN_262K = 83580.588 / 15575.729  # = 5.366
 #             layer, fwd+bwd, bf16, checkpointing off both arms, against a
 #             MODERN transformer block): x2.226 at T=2,048 and x1.786 at
 #             T=8,192, from x6.116 at T=2,048 the same morning. RE-BASED AGAIN
-#             2026-08-25: the 2k cell is now x1.934 (ledger-of-record receipt),
+#             2026-08-25/29: the 2k cell is now x1.717 (2026-08-29 position of record),
 #             our per-token cost is FLAT in context (the x1.058-per-4x growth and
 #             the B4/T32,768 ~parity cell are RETIRED as a B4 occupancy
 #             artifact), and the crossover is a PROJECTED T ~ 16,900
@@ -660,13 +696,14 @@ PREFILL_TOKENS_PER_S_D2048 = {
 # layer, fwd+bwd, bf16, checkpointing off both arms, modern transformer block).
 # It read 1/9.6 with a crossover near T ~ 88,000 until then, from the
 # pre-megakernel d1152 sweep (bdm/docs/bdm_tf_speed_gap_20260729.md).
-TRAIN_ADVANTAGE_SHORT_SEQ = 1.0 / KERNEL_CAMPAIGN_20260824["step_ratio_2k"]  # = 0.517 at T=2,048 (2026-08-25 2k receipt)
+TRAIN_ADVANTAGE_SHORT_SEQ = 1.0 / KERNEL_CAMPAIGN_20260824["step_ratio_2k"]  # = 0.583 at T=2,048 (2026-08-29 position of record)
 # RE-BASED 2026-08-25: the equal-token B4/T32,768 cell reading ~parity was the
 # same B4-batch occupancy artifact as ctx_growth_per_4x_battn above (see that
 # comment) -- not independent ground truth, so it is retired as the crossover
 # anchor. At the flat per-token model (our real behavior at production batch),
 # fed by the newer 2026-08-25 2k receipt (battn_ms_2k=115.9910), the fitted
-# crossover is T~16,943: we should already be meaningfully ahead of parity
+# crossover is T~13,008 (2026-08-29 anchor; was ~16,943 on the 08-25 cell): we
+# should already be meaningfully ahead of parity
 # well before 32k. This is PROJECTED, not measured -- a corrected production-
 # batch receipt is owed (~/bdm-prefill/docs/ledger_frame_20260825.md) and has
 # not landed. A naive log-linear extrapolation of the 2k->8k ratio decay
@@ -674,7 +711,13 @@ TRAIN_ADVANTAGE_SHORT_SEQ = 1.0 / KERNEL_CAMPAIGN_20260824["step_ratio_2k"]  # =
 # T ~ 310,000 instead: that remains the CONSERVATIVE bound, because the
 # transformer's attention term is quadratic so its growth factor rises with
 # context while ours stays flat.
-TRAIN_CROSSOVER_TOKENS = 16943  # PROJECTED (flat per-token model, 2026-08-25 2k receipt; B4 measurement retired as artifact-contaminated)
+# CORROBORATED 2026-08-31: an independent measured crossover exists on box-3
+# H100 d4096 (tsweep, n=25): step parity ~21-24k tokens at B=4, bwd parity
+# ~19.7-19.8k, and the fixed-B16 convention reads T* ~ 16k (memory_parity
+# analysis). Still labeled PROJECTED for the box-1 GH200 frame until its own
+# production-batch receipt lands. Was 16,943 on the 2026-08-25 2k cell; the
+# 2026-08-29 re-anchor (101.737 ms) moves the fit to ~13.0k.
+TRAIN_CROSSOVER_TOKENS = 13008  # PROJECTED for the GH200 frame (flat per-token model, 2026-08-29 2k anchor); measured 21-24k @ B4 / ~16k @ B16 on H100 d4096
 
 
 def decode_ms_per_token(family, ctx):
@@ -912,7 +955,7 @@ STEP_GAP_20260814 = {
     "note": "a short-context training configuration, not a serving workload; the kernel campaign is the line item against it",
     "receipt": "bdm/docs/deck/build/dtype_trio_v4.json",
     # SUPERSEDED AS A HEADLINE 2026-08-24. The kernel campaign is the line item
-    # against it, and it landed: the single-layer frame now reads x1.934 at
+    # against it, and it landed: the single-layer frame now reads x1.717 at
     # T=2048 (RE-BASED AGAIN 2026-08-25 (3)) and x1.786 at T=8192
     # (KERNEL_CAMPAIGN_20260824). This row stays as a dated d1536/27L fp16
     # receipt; quote the newer one.
@@ -953,7 +996,7 @@ def quality_matched_compute_lever(n_tf=DECK_DEPLOYMENT_SCALE, w=None):
     PROJECTION, not a receipt.
 
     The counterweight is KERNEL_CAMPAIGN_20260824: at 2,048-token context on one
-    GPU a training step still costs x1.934 MORE (x1.786 at 8,192; 2k RE-BASED
+    GPU a training step still costs x1.717 MORE (x1.786 at 8,192; 2k RE-BASED
     AGAIN 2026-08-25 (3)), which the equal-quality parameter ratio takes below 1
     at trillion scale but which is still a loss at matched size and short
     context. The economics slide excludes training for that reason. It used to
@@ -1139,7 +1182,7 @@ TRAINING_CURRICULA = {
         "mix": ((2048, 1.00),),
         "label": "Legacy short (all training at 2k)",
         "status": "MEASURED (degenerate one-context case)",
-        "note": "reproduces TRAIN_ADVANTAGE_SHORT_SEQ = x0.517 exactly (RE-BASED AGAIN "
+        "note": "reproduces TRAIN_ADVANTAGE_SHORT_SEQ = x0.583 exactly (RE-BASED AGAIN "
                 "2026-08-25 (3); was x0.449); the assumption the model used to make "
                 "implicitly for ALL training",
     },
@@ -1363,6 +1406,60 @@ assert abs(GLOBALS["flop_factor"] - COMPUTE_LEVER_20260814) < 0.05, (
 )
 
 
+# ---- CAMPAIGN-LANDED scenario (2026-08-31 ruling) ------------------------------
+# The single scenario the standalone FY26/FY27 charts run on (replacing the
+# Today-vs-Ceiling pair THERE; decks/xlsx/app keep the two-scenario convention).
+# It prices the state after the funded kernel edits land, on the user's stated
+# targets. Every entry is a TARGET, not a receipt -- the whole scenario is an
+# ESTIMATE until the aggregate-decode measurement lands (see 'receipt_needed').
+CAMPAIGN_LANDED_20260831 = {
+    "status": "ESTIMATE — post-campaign targets; aggregate-decode receipt PENDING",
+    # Our decode after the edits: 2.5 ms wall per generated token, SINGLE stream,
+    # d2048, T=2,048 -- context-flat (no KV re-read), so the per-token edge over
+    # the transformer grows with context (tf: 1.58 ms + 0.051 us/token of ctx).
+    "decode_own_ms_per_token": 2.5,
+    # Concurrency multiplier: one stream nowhere near occupies the card, so the
+    # aggregate rate scales with resident streams. 64 is HELD from the measured
+    # 2026-08-14 cell (64 streams in 1.62 GB, a grid cap, 9.5% GPU-busy) -- an
+    # ESTIMATE that batching keeps the 2.5 ms step at that concurrency.
+    "streams_per_gpu": 64,
+    # Training-side targets (label the scenario; the headline lever is a SERVING
+    # claim with train_share=0, so these do not enter the dollars):
+    "train_mem_ratio_target": 1.0,   # TF training-memory parity
+    "train_step_ratio_2k_target": 1.3,  # x1.3 at T=2,048, improving with context (flat per-token)
+    "receipt_needed": "aggregate decode throughput on the post-edit kernel: tok/s/GPU at "
+                      "d2048 over a stream sweep (1/8/64) x context sweep (2k/32k/262k). "
+                      "Turns this scenario's decode leg from ESTIMATE into MEASURED. Full "
+                      "protocol: experiments/receipts/decode_aggregate_receipt_20260831_instructions.md",
+}
+
+
+def campaign_landed_flop_lever(streams_per_gpu=None, decode_ms_per_token=None, w=None):
+    """The campaign-landed compute lever: the Today lever's structure (serving
+    blend x fit-derived equal-quality parameter ratio) with OUR decode leg
+    replaced by the post-edit target (streams_per_gpu x 1000/decode_ms tok/s/GPU,
+    context-flat). Transformer side stays the measured 1/context law at its KV
+    ceiling. ESTIMATE until the receipt in CAMPAIGN_LANDED_20260831 lands."""
+    c = CAMPAIGN_LANDED_20260831
+    n_streams = streams_per_gpu if streams_per_gpu is not None else c["streams_per_gpu"]
+    ms = decode_ms_per_token if decode_ms_per_token is not None else c["decode_own_ms_per_token"]
+    w = dict(WORKLOAD, **(w or {}))
+    ctx = float(w["context_tokens"])
+    r = float(w["in_out_ratio"])
+    gpus = SERVING["gpus_per_box"]
+    econ = serving_economics(ctx)
+    tf_dec_tps = econ["tf_tokens_per_s_box"]
+    own_dec_tps = n_streams * 1000.0 / ms * gpus
+    tf_pf_tps = prefill_tokens_per_s("transformer", ctx) * gpus
+    own_pf_tps = prefill_tokens_per_s("bdm", ctx) * gpus
+    tf_total = r / tf_pf_tps + 1.0 / tf_dec_tps
+    own_total = r / own_pf_tps + 1.0 / own_dec_tps
+    return (tf_total / own_total) * param_matching_gain(DECK_DEPLOYMENT_SCALE)
+
+
+CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 347.7 at the 64-stream / 2.5 ms targets
+
+
 # One row per assumption, visible on every surface that renders the serving /
 # training numbers (app tab, workbook sheet, __main__ print). status is one of
 # MEASURED / PROJECTION / ASSUMPTION.
@@ -1385,7 +1482,7 @@ SERVING_TRAINING_ASSUMPTIONS = [
     ("Transformer KV wall", "197 KB per token of context per stream — 51.5 GB for one 262,144-token stream, a 2nd stream OOMs a 96 GB card, and 16 streams OOM it at 32,768 tokens. Its retired 88.5 per-token decode cost was inflated by a growing-KV re-planning harness artifact; the traced figure is 14.92 GPU-busy at 262k", "MEASURED", "deck_decode_d2048_bf16_gh200_20260814.json rows[transformer]"),
     ("Training throughput at 8 GPUs", "x5.15 (bAttention, fwd+bwd) vs x3.70 (transformer Ulysses best, forward-only) at matched 16-in-flight load -> x1.39; x6.27 at 256 in flight -> x1.70", "MEASURED", "derived.json matched_load_curve, scaling_1to8_best"),
     ("Memory walls (component scope)", "64k-token sequence: 30.9 GB (fits 1 GPU) vs OOM at 78.4 GB attempted; pipeline stage 9.05 GB flat vs GPipe 43.3 GB", "MEASURED", "derived.json pipeline_feasibility, pipeline_memory_asymmetry"),
-    ("Compute lever (flop_factor)", "cross-family prefill, bf16, 1xH100, parameter counts exactly matched, block scope (1 layer, batch 16): TF/bAttention 4.02 at d512/1M, 3.83 at d1024/1M, 2.01 at d2048/262k. Short context favours the transformer and is stated so. NOTE: measured on the PRE-CAMPAIGN kernels and not re-run since 2026-08-24, so the TODAY lever is conservative; the realized x3.452 sits in CEILING_PREFILL_SPEEDUP, not here", "MEASURED", "matched_d{512,1024,2048}_h100.json (2026-07-21)"),
+    ("Compute lever (flop_factor)", "cross-family prefill, bf16, 1xH100, parameter counts exactly matched, block scope (1 layer, batch 16): TF/bAttention 4.02 at d512/1M, 3.83 at d1024/1M, 2.01 at d2048/262k. Short context favours the transformer and is stated so. NOTE: measured on the PRE-CAMPAIGN kernels and not re-run since 2026-08-24, so the TODAY lever is conservative; the realized x3.936 sits in CEILING_PREFILL_SPEEDUP, not here", "MEASURED", "matched_d{512,1024,2048}_h100.json (2026-07-21)"),
     ("Compute, fp32 lane (scope reference)", "the d2048/24-layer fp32 sweep gives 7.91 at 262k at full-model scope. No fp32 FlashAttention kernel exists, so that lane runs mem-efficient attention on the transformer and the owned arm is fp16 internally; params 16.7% apart. Full model in bf16 has not been run", "LABEL", "deck_speed_scaling_d2048_h100_20260803.json sdpa_fp32_backend_probe + last_route_attestation"),
     ("16-bit IO (training)", "same-arch GH200 gate at d1536: fp16 x1.185 step time and -17.5% peak memory, bf16 x1.171 and -20.6%; quality deltas +0.001 to +0.004 from the gate's smaller vehicle. Reported on its own; not an input to the compute lever", "MEASURED", "receipts/io16_gate_20260809.md (2026-08-09)"),
     ("Quality parity at 70B", "transformer needs x4.1 params [2.2-7.7] or x1.7 tokens [1.33-2.10, beta=0.28 assumption]; crossover N* ~321M = the top measured rung", "PROJECTION", "derived.json quality_fit.ref_70B, parity_cost"),
@@ -1409,7 +1506,8 @@ def energy_reduction(g):
 
 
 def compute_company(comp, g, year):
-    """Return all derived numbers for one company in one year ('fy25' or 'fy26'). All $B."""
+    """Return all derived numbers for one company in one year ('fy25', 'fy26' or
+    'fy27' -- fy27 is STREET-ESTIMATE grade, see the per-company fy27 comments). All $B."""
     total, infra, server, accel_share = comp[year]
     R = reduction_factor(g)
     ai_capex = total * infra  # AI-infra capex (full)
@@ -1427,7 +1525,7 @@ def compute_company(comp, g, year):
     spend_cut = capex_avoided + opex_saved
     capitalized = spend_cut / g["discount_rate"]
     # AI economics (cash basis)
-    rev = comp["ai_rev"][0 if year == "fy25" else 1]
+    rev = comp["ai_rev"][{"fy25": 0, "fy26": 1, "fy27": 2}[year]]
     net_now = rev - ai_capex - ai_opex
     net_arch = net_now + spend_cut
     return {
@@ -1605,10 +1703,10 @@ HEADLINE_QUOTED_20260824 = (
     ("fy26_capitalized", 6100.0, 50.0),      # "~$6.1T"
     ("global_fy25_capitalized", 3300.0, 50.0),   # "global est ~$3.3T FY25"
     ("global_fy26_capitalized", 7600.0, 50.0),   # "~$7.6T FY26"
-    ("fy25_ceiling_spend_cut", 163.0, 0.5),  # "Ceiling: ~$163B FY25"
+    ("fy25_ceiling_spend_cut", 163.7, 0.5),  # "Ceiling: ~$164B FY25" (2026-08-29 re-anchor; was 163.0)
     ("today_reduction", 20.0, 0.5),          # "~20x cost-weighted"
-    ("ceiling_reduction", 45.1, 0.5),        # "~45x" (RE-BASED AGAIN 2026-08-25 (3); was 39.0)
-    ("ceiling_dollar_gap_pct", 2.85, 0.25),  # "the two differ only ~2.85% in dollars" (was 2.5)
+    ("ceiling_reduction", 49.6, 0.5),        # "~50x" (2026-08-29 re-anchor: realized x3.94; was 45.1)
+    ("ceiling_dollar_gap_pct", 3.1, 0.25),   # "the two differ only ~3% in dollars" (was 2.85)
 )
 
 _HEADLINE = headline_family()
