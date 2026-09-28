@@ -1,7 +1,7 @@
 """AI Capex Efficiency — interactive mirror of the AI_Capex_Efficiency workbook.
 
-One Streamlit tab per worksheet (Totals, each company, Inputs, Sensitivity, CostLadder,
-Evidence, Methodology). Each tab is the same colored grid as the Excel:
+One Streamlit tab per worksheet (Summary, Value Bridge, Levers, each company, then the
+technical appendix: Totals, Inputs, Sensitivity, CostLadder, Evidence, Methodology). Each tab is the same colored grid as the Excel:
   🟡 assumption (a lever — editable)   🟢 disclosed filing/market data   🔵 derived
 Edit the yellow/green cells (globals in the sidebar; per-company in the ✏️ panel on each
 company tab) and every grid recomputes. All math comes from ai_capex_model.py, so the app
@@ -36,7 +36,9 @@ from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             training_advantage_mix, training_context_crossover,
                             training_helps_headline_threshold,
                             headline_with_training, TRAINING_CURRICULA,
-                            KV_MB_PER_TOKEN_PER_STREAM)
+                            KV_MB_PER_TOKEN_PER_STREAM,
+                            value_bridge, value_bridge_levers, savings_ladder,
+                            VALUE_BRIDGE_CURRICULUM)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -990,6 +992,193 @@ Per-company source links are on each company tab.
 """)
 
 
+# ---- audience layer: Summary / Value Bridge / Levers (mirrors the workbook) -----
+_SCALES = {"1B": 1e9, "10B": 1e10, "100B": 1e11, "1T": 1e12, "10T": 1e13}
+_LEVER_TEXT = [
+    ("smaller_model", "1 · Smaller model for the same quality", "PROJECTED", "×",
+     "Quality-vs-size trends measured on models we trained (47M–663M parameters), extended to frontier "
+     "scale: a Helarctos model matches the transformer with a fraction of the parameters.",
+     "Training and serving compute"),
+    ("fewer_tokens", "2 · Fewer training tokens needed", "PROJECTED", "×",
+     "Compute-optimal training scales data with model size, so a smaller model needs fewer tokens.",
+     "Training"),
+    ("train_speed", "3 · Faster training per token on long documents", "MEASURED per length · mix illustrative", "×",
+     "A transformer's cost per token rises with document length; ours stays flat. Averaged over a modern "
+     "training mix. On short (2k) documents the transformer is still faster today.",
+     "Training"),
+    ("memory", "4 · Memory per live conversation", "MEASURED (capped)", "÷",
+     "A transformer's KV cache grows with every token of every conversation (~197 KB/token); Helarctos "
+     "keeps a fixed-size state (~25 MB). ×2,000 measured at 262k — capped at ÷100.",
+     "Serving memory (~60% of GPU cost)"),
+    ("serving_throughput", "5 · More conversations served per GPU", "ESTIMATE", "×",
+     "Small per-conversation memory lets one GPU hold many long conversations at once; no growing cache "
+     "is re-read per token. At a 128k-token average context.",
+     "Serving compute (~40% of GPU cost)"),
+]
+
+
+def _train_shares():
+    out = {}
+    for c in COMPANIES:
+        k = f"ts_{c['name']}"
+        st.session_state.setdefault(
+            k, float(CAMPAIGN_LANDED_20260831["train_share_by_company"].get(
+                c["name"], CAMPAIGN_LANDED_20260831["train_share"])))
+        out[c["name"]] = float(st.session_state[k])
+    return out
+
+
+def _bridge_levers(g):
+    kernels = "current" if st.session_state.get("scenario") == "Today" else "mature"
+    return value_bridge_levers(g, kernels=kernels,
+                               n_tf=_SCALES[st.session_state.get("deploy_scale", "1T")])
+
+
+def summary_tab(comps, g):
+    lv, ts = _bridge_levers(g), _train_shares()
+    rows26, t26 = value_bridge(g, comps, "fy26", lv, ts)
+    _, t25 = value_bridge(g, comps, "fy25", lv, ts)
+    spend26 = t26["ai_capex"] + t26["ai_opex"]
+    st.markdown(
+        f"In FY2026 the six largest AI spenders will spend **{md_usd(spend26)}B** on AI and earn "
+        f"**{md_usd(t26['ai_rev'])}B** from it. Helarctos models do the same AI work — training and serving "
+        f"at the same quality — on a fraction of the hardware. Scenario: **{st.session_state.get('scenario')}** "
+        f"(sidebar).")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("AI spend (FY26)", f"{usd0(spend26)}B")
+    k2.metric("Net AI cash result today", f"{usd0(t26['net_now'])}B")
+    k3.metric("Spend Helarctos makes unnecessary", f"{usd0(t26['spend_cut'])}B/yr",
+              delta=f"{pct(t26['pct_cut'])} of AI spend")
+    k4.metric("Net AI with Helarctos", f"{usd0(t26['net_with'])}B",
+              delta=f"FY25: {usd0(t25['spend_cut'])}B cut")
+
+    section("Where the savings come from — FY2026, $B per year")
+    src = [
+        ("Training clusters", t26["train_saved"],
+         f"Same-quality model {lv['smaller_model']:.1f}× smaller, {lv['fewer_tokens']:.1f}× fewer tokens, "
+         f"{lv['train_speed']:.1f}× faster per token → {lv['train_lever']:.0f}× fewer GPU-hours → smaller training clusters"),
+        ("Serving: memory", t26["serve_mem_saved"],
+         f"Fixed-size state instead of a growing cache → ÷{lv['memory']:.0f} memory per conversation"),
+        ("Serving: compute", t26["serve_comp_saved"],
+         f"Smaller model × {lv['serving_throughput']:.0f}× more conversations per GPU → "
+         f"{lv['serving_compute_lever']:.0f}× less compute per token"),
+        ("Power & operations", t26["opex_saved"], "Fewer chips draw less power and cooling"),
+    ]
+    show_table(["Source", "$B / yr", "share", "How Helarctos does it"],
+               [[(a, ""), (n1(v), "b"), (pct(v / t26["spend_cut"]), "b"), (h, "")] for a, v, h in src]
+               + [[("TOTAL", "s"), (n1(t26["spend_cut"]), "s"), ("100%", "s"), ("", "s")]])
+    st.bar_chart(pd.DataFrame({"$B/yr": [v for _, v, _ in src]}, index=[a for a, _, _ in src]),
+                 horizontal=True)
+
+    section("By company — FY2026, $B")
+    show_table(["Company", "AI spend", "Helarctos saving / yr", "% of AI spend", "…of which training",
+                "Net AI today", "Net AI with Helarctos"],
+               [[(r["name"], "s" if r is t26 else ""), (n0(r["ai_capex"] + r["ai_opex"]), "b"),
+                 (n1(r["spend_cut"]), "b"), (pct(r["pct_cut"]), "b"), (n1(r["train_saved"]), "b"),
+                 (n0(r["net_now"]), "b"), (n0(r["net_with"]), "b")] for r in rows26 + [t26]])
+    st.caption("Why ~99% of the chip bill and not '1,000×': costs add, they don't multiply. Once memory needs "
+               "fall 100× and compute needs fall hundreds of times, ~99% of the chip bill for the same AI output "
+               "is gone — bigger multiples only move the last 1%. Only chips and their power are counted; "
+               "buildings and power infrastructure are upside.")
+
+
+def value_bridge_tab(comps, g):
+    lv, ts = _bridge_levers(g), _train_shares()
+    rows, t = value_bridge(g, comps, "fy26", lv, ts)
+    section("Step 1 — What they spend on AI (FY2026, $B)")
+    show_table(["Item", "$B", "Note"], [
+        [("AI data-centre capex", ""), (n0(t["ai_capex"]), "b"), ("company filings and guidance", "")],
+        [("…of which AI chips (GPUs, TPUs)", ""), (n0(t["accel"]), "b"), ("the part Helarctos shrinks", "")],
+        [("Power & operations for those chips / yr", ""), (n1(t["ai_opex"]), "b"), ("", "")],
+        [("AI revenue", ""), (n0(t["ai_rev"]), "b"), ("", "")],
+        [("Net AI cash result today", "s"), (n0(t["net_now"]), "s"), ("revenue − capex − power", "s")],
+    ])
+    section("Step 2 — Split the chip fleet by what it does")
+    show_table(["Fleet", "$B", "share"], [
+        [("Training fleet — builds new models", ""), (n0(t["train_fleet"]), "b"), (pct(t["train_share"]), "y")],
+        [("Serving fleet — answers users", ""), (n0(t["serve_fleet"]), "b"), (pct(1 - t["train_share"]), "b")],
+    ])
+    section("Step 3 — Training: fewer GPU-hours per model → smaller training clusters → capex avoided")
+    show_table(["Item", "value"], [
+        [("Training fleet capex today", ""), (n0(t["train_fleet"]), "b")],
+        [("× smaller model for the same quality", ""), (x1(lv["smaller_model"]), "b")],
+        [("× fewer training tokens", ""), (x1(lv["fewer_tokens"]), "b")],
+        [("× faster per token on long documents", ""), (x1(lv["train_speed"]), "y")],
+        [("= GPU-hours per training run fall by", "s"), (f"{lv['train_lever']:.1f}×", "s")],
+        [("Training fleet needed with Helarctos", ""), (n1(t["train_fleet"] / lv["train_lever"]), "b")],
+        [("TRAINING CAPEX AVOIDED", "s"), (n0(t["train_saved"]), "s")],
+    ])
+    st.caption("Labs size training clusters to the GPU-hours their runs need; the same training programme on "
+               f"{lv['train_lever']:.0f}× fewer GPU-hours runs on a cluster that much smaller — the GPUs never "
+               "bought are capex avoided. No memory credit is taken on training.")
+    section("Step 4 — Serving: less memory and more conversations per GPU")
+    m = lv["mem_share"]
+    mem, comp = t["serve_fleet"] * m, t["serve_fleet"] * (1 - m)
+    show_table(["Part of the serving chips", "$ today", "falls by", "$ needed", "$ avoided"], [
+        [(f"Memory (~{m:.0%} of cost)", ""), (n0(mem), "b"), (f"÷{lv['memory']:.0f}", "b"),
+         (n1(mem / lv["memory"]), "b"), (n0(t["serve_mem_saved"]), "b")],
+        [(f"Compute (~{1 - m:.0%} of cost)", ""), (n0(comp), "b"), (f"{lv['serving_compute_lever']:.0f}×", "b"),
+         (n1(comp / lv["serving_compute_lever"]), "b"), (n0(t["serve_comp_saved"]), "b")],
+        [("SERVING CAPEX AVOIDED", "s"), ("", "s"), ("", "s"), ("", "s"),
+         (n0(t["serve_mem_saved"] + t["serve_comp_saved"]), "s")],
+    ])
+    section("Result — FY2026")
+    show_table(["Item", "$B"], [
+        [("Training capex avoided", ""), (n1(t["train_saved"]), "b")],
+        [("Serving capex avoided", ""), (n1(t["serve_mem_saved"] + t["serve_comp_saved"]), "b")],
+        [("Power & operations saved", ""), (n1(t["opex_saved"]), "b")],
+        [("SPEND HELARCTOS MAKES UNNECESSARY / yr", "s"), (n1(t["spend_cut"]), "s")],
+        [("…as a share of all AI spend", ""), (pct(t["pct_cut"]), "b")],
+        [("Net AI cash result with Helarctos", ""), (n0(t["net_with"]), "b")],
+        [("Capitalized (÷ discount rate), $T", ""), (f"{t['spend_cut'] / g['discount_rate'] / 1000:.1f}", "b")],
+    ])
+    section("Where the needle moves — switch the levers on one at a time (FY2026)")
+    lad = savings_ladder(g, comps, "fy26", lv, ts)
+    show_table(["Step", "Training GPU-hours ÷", "Serving memory ÷", "Serving compute ÷", "Chip fleet cut",
+                "Spend cut $B/yr", "Added by this step"],
+               [[(s_["step"], ""), (x1(s_["train_lever"]), "b"), (f"{s_['memory']:.0f}", "b"),
+                 (x1(s_["serving_compute_lever"]), "b"), (f"{s_['fleet_cut']:.1%}", "b"),
+                 (n0(s_["spend_cut"]), "s"), (f"+{s_['increment']:,.0f}" if i else "—", "b")]
+                for i, s_ in enumerate(lad)])
+    st.bar_chart(pd.DataFrame({"Spend cut $B/yr": [s_["spend_cut"] for s_ in lad]},
+                              index=[f"{i}. {s_['step']}" for i, s_ in enumerate(lad)]))
+    st.caption("The smaller model alone removes about half the chip bill (and nearly all of training, since "
+               "fewer parameters and fewer tokens compound). Fixed-size memory is the biggest serving lever — "
+               "memory is ~60% of a GPU's cost. Later levers have big multiples but add little: a cost can only "
+               "fall to zero once. The order is the storyline; the end point doesn't depend on it.")
+    _, tt = compute_year(g, comps, "fy26")
+    st.caption(f"Cross-check: the technical Totals tab prices the whole fleet on the serving levers — "
+               f"{md_usd(tt['spend_cut'])}B FY26 vs {md_usd(t['spend_cut'])}B here.")
+
+
+def levers_tab(g):
+    lv = _bridge_levers(g)
+    section("The five Helarctos levers — set the scenario and scale in the sidebar")
+    show_table(["Lever", "Value", "How sure are we?", "What it means", "Where it saves money"],
+               [[(lab, ""), (f"{sym}{lv[k]:.0f}" if sym == "÷" else f"{lv[k]:.2f}{sym}", "b"),
+                 (status, "g" if status.startswith("MEASURED") else "y"), (what, ""), (where, "")]
+                for k, lab, status, sym, what, where in _LEVER_TEXT],
+               widths={"What it means": "large"})
+    section("How they combine")
+    show_table(["Fleet lever", "Value", "Built from"], [
+        [("Training: GPU-hours per run fall by", ""), (f"{lv['train_lever']:.1f}×", "b"), ("levers 1 × 2 × 3", "")],
+        [("Serving: memory falls by", ""), (f"÷{lv['memory']:.0f}", "b"), ("lever 4", "")],
+        [("Serving: compute falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b"), ("levers 1 × 5", "")],
+        [("Serving fleet cost falls by (blended)", ""),
+         (x1(1 / (lv["mem_share"] / lv["memory"] + (1 - lv["mem_share"]) / lv["serving_compute_lever"])), "s"),
+         ("costs add, not multiply — the less-improved part sets the floor", "")],
+    ])
+    section("Training share of each company's AI-chip fleet (🟡 edit)")
+    st.caption("No company discloses this; analysts put training at 30–45% of AI compute in 2026.")
+    _train_shares()
+    cols = st.columns(len(COMPANIES))
+    for col, c in zip(cols, COMPANIES):
+        col.number_input(c["name"], min_value=0.0, max_value=1.0, step=0.05, format="%.2f",
+                         key=f"ts_{c['name']}")
+    st.caption(f"Training curriculum behind lever 3: {TRAINING_CURRICULA[VALUE_BRIDGE_CURRICULUM]['label']} "
+               "(illustrative). Only chips and their power are counted; no memory credit on training.")
+
+
 # ---- main ----------------------------------------------------------------------
 st.title("AI Capex Efficiency")
 st.caption("Interactive mirror of the workbook — the \\$ value of the measured architecture advantage "
@@ -1000,26 +1189,34 @@ st.caption("Interactive mirror of the workbook — the \\$ value of the measured
            "🟡 assumption · 🟢 disclosed data · 🔵 derived.")
 
 g = sidebar_globals()
-names = ["Totals"] + [c["name"] for c in COMPANIES] + ["Inputs", "Sensitivity", "CostLadder", "Serving·Training", "Evidence", "Methodology"]
+FRONT = ["Summary", "Value Bridge", "Levers"]
+names = FRONT + [c["name"] for c in COMPANIES] + ["Totals", "Inputs", "Sensitivity", "CostLadder", "Serving·Training", "Evidence", "Methodology"]
 T = st.tabs(names)
 nco = len(COMPANIES)
+nf = len(FRONT)
 comps = [dict(c) for c in COMPANIES]
 
-# company tabs first so their edits are captured before the Totals roll-up computes
+# company tabs first so their edits are captured before the roll-ups compute
 for i, c in enumerate(comps):
-    with T[1 + i]:
+    with T[nf + i]:
         company_tab(c, g)
+with T[2]:
+    levers_tab(g)
 with T[0]:
+    summary_tab(comps, g)
+with T[1]:
+    value_bridge_tab(comps, g)
+with T[nf + nco]:
     totals_tab(comps, g)
-with T[1 + nco]:
+with T[nf + nco + 1]:
     inputs_tab(g)
-with T[2 + nco]:
+with T[nf + nco + 2]:
     sensitivity_tab(comps, g)
-with T[3 + nco]:
+with T[nf + nco + 3]:
     costladder_tab(g)
-with T[4 + nco]:
+with T[nf + nco + 4]:
     serving_training_tab(g)
-with T[5 + nco]:
+with T[nf + nco + 5]:
     evidence_tab(g)
-with T[6 + nco]:
+with T[nf + nco + 6]:
     methodology_tab(g)
