@@ -13,8 +13,18 @@ Deploy free:  push to GitHub -> share.streamlit.io  (needs requirements.txt)
 
 from pathlib import Path
 
+import importlib
+
 import streamlit as st
 import pandas as pd
+
+import ai_capex_model
+
+# Streamlit Cloud pulls new code into a running process without restarting it,
+# so a module imported before the pull stays cached and app.py can fail with an
+# ImportError against the stale copy. Reloading on every run prevents that; the
+# import is cheap.
+importlib.reload(ai_capex_model)
 
 from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             SERVING_TRAINING_ASSUMPTIONS, PREFILL_BF16_D2048_SWEEP,
