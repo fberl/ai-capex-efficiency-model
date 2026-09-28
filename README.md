@@ -88,11 +88,42 @@ disclosed capex to size the **avoided spend** and its **capitalized value**.
 Coverage: the 6 largest AI-capex spenders (Microsoft, Alphabet, Amazon, Meta, Oracle,
 SpaceX) plus a grossed-up **global estimate**.
 
+## Start here: Summary, Value Bridge, Levers
+
+The workbook and the app both open on three plain-language tabs for a non-technical reader.
+The engineering ledger is still there, moved behind them as a technical appendix (Totals, Inputs,
+Sensitivity, CostLadder, ServingTraining, Evidence, Methodology).
+
+- **Summary**: the FY2026 and FY2025 headline, where the saving comes from (training clusters,
+  serving memory, serving compute, power), and a per-company table.
+- **Value Bridge**: a step-by-step walk from disclosed capex to the saving. The chip fleet is split
+  into a **training fleet** and a **serving fleet**, using per-company training shares. Training
+  savings turn into capex like this: a same-quality Helarctos model is ×4.2 smaller, trains on ×4.2
+  fewer tokens and is ×2.2 cheaper per token on a modern long-context mix. That is ×40 fewer GPU-hours,
+  so the training cluster can be ×40 smaller, and the GPUs it no longer needs are capex avoided.
+  The tab also has a **one-lever-at-a-time ladder** showing where the needle actually moves:
+
+  | Step (FY2026, Today) | Spend cut |
+  |---|---|
+  | Smaller model for the same quality | ~$209B |
+  | + Fixed-size memory per conversation | ~$352B |
+  | + Many more conversations per GPU | ~$375B |
+  | + Faster training on long documents | ~$379B |
+
+- **Levers**: the five Helarctos levers in plain English. Each shows how sure we are of it
+  (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks. The tab
+  also holds the Today / Optimized-kernels switch and the per-company training shares.
+
+The bridge prices training on its own GPU-hour lever and takes no memory credit on training.
+It lands within ~1% of the technical Totals tab ($379B vs $382B FY26), which prices the whole fleet
+on the serving levers. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs.
+With every training share at 0 it reproduces the Totals number exactly, and that is asserted at import.
+
 ## Live app
 
 Deploy free on [Streamlit Community Cloud](https://share.streamlit.io) — see **Deploy** below.
-The app is a **tab-for-tab mirror of the workbook**: one tab per worksheet (Totals, each company,
-Inputs, Sensitivity, Cost Ladder, Evidence, Methodology), each rendered as the same colored grid.
+The app is a **tab-for-tab mirror of the workbook**: one tab per worksheet (Summary, Value Bridge,
+Levers, each company, Totals, Inputs, Sensitivity, Cost Ladder, Evidence, Methodology), each rendered as the same colored grid.
 Edit the 🟡/🟢 cells (globals in the sidebar; per-company in the ✏️ panel on each company tab) and
 every grid recomputes live.
 

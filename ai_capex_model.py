@@ -2025,6 +2025,141 @@ for _k, _quoted, _tol in HEADLINE_QUOTED_20260901:
 del _k, _quoted, _tol
 
 
+# ---- plain-language VALUE BRIDGE (2026-09-28) -----------------------------------
+# The audience-facing view (workbook Summary / Value Bridge / Levers tabs, app
+# tabs of the same names). Same engine as compute_company, with one change that
+# makes the story legible: the chip fleet is SPLIT into a TRAINING fleet and a
+# SERVING fleet (per-company training shares, CAMPAIGN_LANDED_20260831), and
+# each fleet gets the Helarctos lever that actually acts on it:
+#
+#   training fleet  sized by GPU-hours per training run. Equal-quality model is
+#                   s x smaller (FIT-DERIVED), trains on s x fewer tokens
+#                   (compute-optimal D ~ N), and each token is k x cheaper over
+#                   a modern long-context curriculum (MEASURED r(T) x
+#                   ILLUSTRATIVE mix). GPU-hours fall s*s*k -> the cluster can
+#                   be that much smaller -> training capex avoided =
+#                   training fleet x (1 - 1/(s*s*k)). Whole-GPU lever: no
+#                   memory credit is taken on training (conservative).
+#   serving fleet   the existing Amdahl engine: memory share / mem_factor +
+#                   compute share / (s x serving throughput per GPU).
+#
+# Cost buckets are ADDITIVE, so the dollars attribute exactly to buckets
+# (training / serving memory / serving compute / power). With every training
+# share at 0 this reproduces compute_company's spend cut exactly (asserted).
+# Base = accelerator capex only (dc_scale deliberately ignored here: buildings
+# and power infrastructure are upside, stated on the surfaces).
+VALUE_BRIDGE_CURRICULUM = "modern_standard"
+
+
+def value_bridge_levers(g=None, kernels="current", n_tf=None):
+    """The five audience-facing Helarctos levers + the two fleet levers they
+    compose into. kernels: 'current' (Today) or 'mature' (Ceiling: optimized
+    kernels). The serving throughput lever is read off g['flop_factor'] / s,
+    so a typed-in FLOPs lever flows through."""
+    g = g if g is not None else GLOBALS
+    scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
+    s = param_matching_gain(scale)
+    k = campaign_landed_train_advantage(VALUE_BRIDGE_CURRICULUM, kernels=kernels,
+                                        quality_matched=False)
+    serve_tp = float(g["flop_factor"]) / s
+    return {
+        "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
+        "fewer_tokens": s,            # PROJECTION (compute-optimal scaling, D ~ N)
+        "train_speed": k,             # MEASURED r(T) x ILLUSTRATIVE curriculum mix (current); TARGET (mature)
+        "memory": float(g["mem_factor"]),   # MEASURED x2,032 at 262k, capped at /100
+        "serving_throughput": serve_tp,     # ESTIMATE (decode 2.5 ms x 64 streams) x MEASURED prefill
+        "train_lever": s * s * k,
+        "serving_compute_lever": s * serve_tp,
+        "mem_share": float(g["mem_share"]),
+    }
+
+
+def _bridge_company(comp, g, year, lv, ts):
+    base = compute_company(comp, g, year)
+    accel = base["accel"]
+    m = lv["mem_share"]
+    train_fleet = accel * ts
+    serve_fleet = accel * (1.0 - ts)
+    train_saved = train_fleet * (1.0 - 1.0 / lv["train_lever"])
+    serve_mem_saved = serve_fleet * m * (1.0 - 1.0 / lv["memory"])
+    serve_comp_saved = serve_fleet * (1.0 - m) * (1.0 - 1.0 / lv["serving_compute_lever"])
+    capex_avoided = train_saved + serve_mem_saved + serve_comp_saved
+    fleet_cut = capex_avoided / accel if accel else 0.0
+    opex_saved = base["ai_opex"] * fleet_cut
+    spend_cut = capex_avoided + opex_saved
+    spend = base["ai_capex"] + base["ai_opex"]
+    return {
+        "name": comp["name"], "train_share": ts,
+        "ai_capex": base["ai_capex"], "accel": accel, "ai_opex": base["ai_opex"],
+        "ai_rev": base["ai_rev"], "net_now": base["net_now"],
+        "train_fleet": train_fleet, "serve_fleet": serve_fleet,
+        "train_saved": train_saved, "serve_mem_saved": serve_mem_saved,
+        "serve_comp_saved": serve_comp_saved, "capex_avoided": capex_avoided,
+        "fleet_cut": fleet_cut, "opex_saved": opex_saved, "spend_cut": spend_cut,
+        "net_with": base["net_now"] + spend_cut,
+        "pct_cut": spend_cut / spend if spend else 0.0,
+        "capitalized": spend_cut / g["discount_rate"],
+    }
+
+
+def value_bridge(g=None, companies=None, year="fy26", levers=None, train_shares=None):
+    """Per-company rows + TOTAL for the plain-language bridge. All $B."""
+    g = g if g is not None else GLOBALS
+    companies = companies if companies is not None else COMPANIES
+    lv = levers if levers is not None else value_bridge_levers(g)
+    c = CAMPAIGN_LANDED_20260831
+    shares = c["train_share_by_company"] if train_shares is None else train_shares
+    rows = [_bridge_company(comp, g, year, lv, shares.get(comp["name"], c["train_share"]))
+            for comp in companies]
+    keys = ["ai_capex", "accel", "ai_opex", "ai_rev", "net_now", "train_fleet",
+            "serve_fleet", "train_saved", "serve_mem_saved", "serve_comp_saved",
+            "capex_avoided", "opex_saved", "spend_cut", "net_with", "capitalized"]
+    total = {k: sum(r[k] for r in rows) for k in keys}
+    total["name"] = f"TOTAL ({len(rows)})"
+    total["train_share"] = total["train_fleet"] / total["accel"] if total["accel"] else 0.0
+    total["fleet_cut"] = total["capex_avoided"] / total["accel"] if total["accel"] else 0.0
+    spend = total["ai_capex"] + total["ai_opex"]
+    total["pct_cut"] = total["spend_cut"] / spend if spend else 0.0
+    return rows, total
+
+
+def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_shares=None):
+    """Switch the Helarctos levers on one at a time (story order) and report the
+    cumulative spend cut. The last step equals value_bridge's total; the order
+    changes the increments, never the end point."""
+    lv = levers if levers is not None else value_bridge_levers(g)
+    s = lv["smaller_model"]
+    steps = [
+        ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0)),
+        ("Smaller model for the same quality", dict(train_lever=s * s, memory=1.0, serving_compute_lever=s)),
+        ("+ Fixed-size memory per conversation", dict(train_lever=s * s, memory=lv["memory"], serving_compute_lever=s)),
+        ("+ Many more conversations per GPU", dict(train_lever=s * s, memory=lv["memory"],
+                                                     serving_compute_lever=lv["serving_compute_lever"])),
+        ("+ Faster training on long documents", dict(train_lever=lv["train_lever"], memory=lv["memory"],
+                                                      serving_compute_lever=lv["serving_compute_lever"])),
+    ]
+    out, prev = [], 0.0
+    for label, over in steps:
+        _, t = value_bridge(g, companies, year, dict(lv, **over), train_shares)
+        out.append({"step": label, "spend_cut": t["spend_cut"], "fleet_cut": t["fleet_cut"],
+                    "increment": t["spend_cut"] - prev, **over})
+        prev = t["spend_cut"]
+    return out
+
+
+def _check_value_bridge():
+    zero = {c["name"]: 0.0 for c in COMPANIES}
+    for yr in ("fy25", "fy26"):
+        _, vb = value_bridge(year=yr, train_shares=zero)
+        _, ref = compute_year(GLOBALS, COMPANIES, yr)
+        assert abs(vb["spend_cut"] - ref["spend_cut"]) < 1e-6, (yr, vb["spend_cut"], ref["spend_cut"])
+        lad = savings_ladder(year=yr)
+        assert abs(lad[-1]["spend_cut"] - value_bridge(year=yr)[1]["spend_cut"]) < 1e-9
+
+
+_check_value_bridge()
+
+
 if __name__ == "__main__":
     print("== Serving at long context — $/1M generated tokens, one 8xH100 box ==")
     print("   (component scope; decode from the 2026-08-14 MEASURED per-GPU cells, transformer granted")
