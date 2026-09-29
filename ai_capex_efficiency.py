@@ -1669,6 +1669,33 @@ def build_serving_training(ws):
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.marker import DataPoint
+from openpyxl.chart.label import DataLabelList
+
+# One color per bar (categorical slots 1-4, validated for adjacent-pair CVD
+# separation; two sit below 3:1 on white, so every bar carries its value label).
+SOURCE_COLORS = ["2A78D6", "EB6834", "1BAF7A", "EDA100"]  # training, serving memory, serving compute, power
+LADDER_COLORS = ["A3A29C"] + SOURCE_COLORS  # baseline gray, then one hue per lever step
+
+
+def _color_bars(ch, colors):
+    ser = ch.series[0]
+    for i, hexc in enumerate(colors):
+        pt = DataPoint(idx=i)
+        pt.graphicalProperties.solidFill = hexc
+        pt.graphicalProperties.line.solidFill = hexc
+        ser.dPt.append(pt)
+    ser.dLbls = DataLabelList()
+    ser.dLbls.showVal = True
+    for attr in ("showSerName", "showCatName", "showLegendKey", "showPercent"):
+        setattr(ser.dLbls, attr, False)
+    ser.dLbls.numFmt = '"$"#,##0"B"'
+    ch.gapWidth = 60
+    ch.x_axis.delete = False  # openpyxl 3.1 hides axes unless told otherwise
+    ch.y_axis.delete = False
+    if ch.type == "bar":
+        ch.x_axis.scaling.orientation = "maxMin"  # list bars top-down in table order
+        ch.y_axis.crosses = "max"                 # ...and keep the $ axis at the bottom
 
 from ai_capex_model import (
     CAMPAIGN_LANDED_20260831 as _LANDED,
@@ -2064,12 +2091,13 @@ def build_value_bridge(ws):
     ws.freeze_panes = "B4"
 
     ch = BarChart()
-    ch.type = "col"
+    ch.type = "bar"
     ch.title = "Spend cut as each lever switches on ($B/yr, FY2026)"
     ch.y_axis.title = "$B per year"
     ch.add_data(Reference(ws, min_col=6, min_row=48, max_row=53), titles_from_data=True)
     ch.set_categories(Reference(ws, min_col=1, min_row=49, max_row=53))
     ch.legend = None
+    _color_bars(ch, LADDER_COLORS)
     ch.height, ch.width = 7.5, 16
     ws.add_chart(ch, "K4")
     return d26, d25
@@ -2191,6 +2219,7 @@ def build_summary(ws, d26, d25):
     ch.add_data(Reference(ws, min_col=2, min_row=15, max_row=19), titles_from_data=True)
     ch.set_categories(Reference(ws, min_col=1, min_row=16, max_row=19))
     ch.legend = None
+    _color_bars(ch, SOURCE_COLORS)
     ch.y_axis.title = "$B per year"
     ch.height, ch.width = 7, 14
     ws.add_chart(ch, "I5")

@@ -1027,6 +1027,32 @@ _LEVER_TEXT = [
 ]
 
 
+# One color per bar (categorical slots 1-4, validated for adjacent-pair CVD
+# separation; two sit below 3:1 on white, so every bar carries its value label).
+SOURCE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # training, serving memory, serving compute, power
+LADDER_COLORS = ["#a3a29c"] + SOURCE_COLORS  # baseline gray, then one hue per lever step
+
+
+def _colored_bars(labels, values, colors, horizontal=False):
+    import altair as alt
+    df = pd.DataFrame({"label": labels, "value": values})
+    cat = alt.X if horizontal else alt.Y
+    lab = (alt.Y if horizontal else alt.X)("label:N", sort=None, title=None,
+                                           axis=alt.Axis(labelLimit=320, labelAngle=0))
+    val = cat("value:Q", title="$B per year", axis=alt.Axis(grid=True, gridOpacity=0.3))
+    color = alt.Color("label:N", sort=None, legend=None,
+                      scale=alt.Scale(domain=labels, range=colors[:len(labels)]))
+    bars = alt.Chart(df).mark_bar(cornerRadiusEnd=4, size=26).encode(
+        lab, val, color, tooltip=[alt.Tooltip("label:N", title=""),
+                                  alt.Tooltip("value:Q", title="$B/yr", format=",.0f")])
+    text = alt.Chart(df).mark_text(align="left" if horizontal else "center",
+                                   baseline="middle" if horizontal else "bottom",
+                                   dx=4 if horizontal else 0, dy=0 if horizontal else -4,
+                                   color="#52514e").encode(lab, val, text=alt.Text("value:Q", format="$,.0f"))
+    st.altair_chart((bars + text).properties(height=46 * len(labels) if horizontal else 320),
+                    use_container_width=True)
+
+
 def _train_shares():
     out = {}
     for c in COMPANIES:
@@ -1077,8 +1103,7 @@ def summary_tab(comps, g):
     show_table(["Source", "$B / yr", "share", "How Helarctos does it"],
                [[(a, ""), (n1(v), "b"), (pct(v / t26["spend_cut"]), "b"), (h, "")] for a, v, h in src]
                + [[("TOTAL", "s"), (n1(t26["spend_cut"]), "s"), ("100%", "s"), ("", "s")]])
-    st.bar_chart(pd.DataFrame({"$B/yr": [v for _, v, _ in src]}, index=[a for a, _, _ in src]),
-                 horizontal=True)
+    _colored_bars([a for a, _, _ in src], [v for _, v, _ in src], SOURCE_COLORS, horizontal=True)
 
     section("By company — FY2026, $B")
     show_table(["Company", "AI spend", "Helarctos saving / yr", "% of AI spend", "…of which training",
@@ -1150,8 +1175,8 @@ def value_bridge_tab(comps, g):
                  (x1(s_["serving_compute_lever"]), "b"), (f"{s_['fleet_cut']:.1%}", "b"),
                  (n0(s_["spend_cut"]), "s"), (f"+{s_['increment']:,.0f}" if i else "—", "b")]
                 for i, s_ in enumerate(lad)])
-    st.bar_chart(pd.DataFrame({"Spend cut $B/yr": [s_["spend_cut"] for s_ in lad]},
-                              index=[f"{i}. {s_['step']}" for i, s_ in enumerate(lad)]))
+    _colored_bars([f"{i}. {s_['step']}" for i, s_ in enumerate(lad)], [s_["spend_cut"] for s_ in lad],
+                  LADDER_COLORS, horizontal=True)
     st.caption("The smaller model alone removes about half the chip bill (and nearly all of training, since "
                "fewer parameters and fewer tokens compound). Fixed-size memory is the biggest serving lever — "
                "memory is ~60% of a GPU's cost. Later levers have big multiples but add little: a cost can only "
