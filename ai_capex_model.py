@@ -137,7 +137,7 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 1552.72,  # FLOPs reduction (x) — SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
+    "flop_factor": 368.07,  # FLOPs (inference) reduction (x) — 2026-09-29 (3) user ruling: inference cost does NOT scale with model size, so the equal-quality parameter ratio (x4.22) now applies to TRAINING only and this lever is the inference throughput per GPU alone, at a 262k-token average context (Current kernels; Optimized = x381.9). Was x1,552.72 = x368.07 x 4.22. Earlier history: SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -1547,9 +1547,14 @@ CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 815.6 at the 64-s
 # flop_factor; the assert keeps every surface quoting what this file computes.
 TODAY_FLOP_LEVER_20260901 = campaign_landed_flop_lever(
     prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)
-assert abs(GLOBALS["flop_factor"] - TODAY_FLOP_LEVER_20260901) < 0.05, (
+# Inference throughput per GPU at the same model size, per scenario (the
+# campaign_landed_flop_lever values carry the equal-quality ratio; divide it
+# back out, since inference cost does not scale with model size).
+INFERENCE_LEVER_CURRENT = TODAY_FLOP_LEVER_20260901 / param_matching_gain(DECK_DEPLOYMENT_SCALE)
+INFERENCE_LEVER_OPTIMIZED = CAMPAIGN_LANDED_FLOP_LEVER / param_matching_gain(DECK_DEPLOYMENT_SCALE)
+assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 0.05, (
     f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
-    f"Today lever {TODAY_FLOP_LEVER_20260901:.4f}"
+    f"inference lever {INFERENCE_LEVER_CURRENT:.4f}"
 )
 
 
@@ -2012,18 +2017,19 @@ def headline_family(g=None, companies=None):
 # Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
 # (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
 HEADLINE_QUOTED_20260929 = (
-    # RE-QUOTED 2026-09-29 (2): single scenario at E[context] 262k (lever
+    # RE-QUOTED 2026-09-29 (3): inference lever no longer scales with model
+    # size (x368, was x1,553). (2): E[context] 262k (lever
     # x1,553) and wall power 2.3 kW/GPU. Ceiling entries removed with the
     # Today/Ceiling pair.
-    ("fy25_spend_cut", 162.0, 0.5),          # "~$162B/yr"
-    ("fy25_capitalized", 2699.0, 50.0),      # "~$2.7T capitalized at 6%"
+    ("fy25_spend_cut", 161.8, 0.5),          # "~$162B/yr"
+    ("fy25_capitalized", 2697.0, 50.0),      # "~$2.7T capitalized at 6%"
     ("fy25_pct_cut", 0.446, 0.005),          # "~45% of AI spend cut"
     ("fy25_net_arch", -122.0, 1.0),          # "burn shrinks to ~ -$122B/yr"
-    ("fy26_spend_cut", 383.2, 0.5),          # "FY26 ~$383B/yr"
-    ("fy26_capitalized", 6386.0, 50.0),      # "~$6.4T"
-    ("global_fy25_capitalized", 3374.0, 50.0),   # "global est ~$3.4T FY25"
-    ("global_fy26_capitalized", 7983.0, 50.0),   # "~$8.0T FY26"
-    ("today_reduction", 159.8, 0.5),         # "~x160 cost-weighted, memory-floored"
+    ("fy26_spend_cut", 382.9, 0.5),          # "FY26 ~$383B/yr"
+    ("fy26_capitalized", 6381.0, 50.0),      # "~$6.4T"
+    ("global_fy25_capitalized", 3371.0, 50.0),   # "global est ~$3.4T FY25"
+    ("global_fy26_capitalized", 7976.0, 50.0),   # "~$8.0T FY26"
+    ("today_reduction", 141.1, 0.5),         # "~x141 cost-weighted, memory-floored" (inference lever x368, size-independent)
 )
 
 _HEADLINE = headline_family()
@@ -2088,7 +2094,7 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
     scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
     s = param_matching_gain(scale)
     k = TRAIN_SPEED_BY_SCENARIO.get(kernels, TRAIN_SPEED_SAME_SIZE)
-    serve_tp = float(g["flop_factor"]) / s
+    serve_tp = float(g["flop_factor"])  # inference cost doesn't scale with model size
     return {
         "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
         "fewer_tokens": s,            # PROJECTION (compute-optimal scaling, D ~ N)
@@ -2096,9 +2102,9 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
         "memory": float(g["mem_factor"]),   # MEASURED x2,032 at 262k, capped at /100
         "serving_throughput": serve_tp,     # ESTIMATE (decode 2.5 ms x 64 streams) x MEASURED prefill
         "train_lever": s * s * k,
-        "serving_compute_lever": s * serve_tp,
+        "serving_compute_lever": serve_tp,
         # whole-GPU serving lever: the binding (smaller) of memory and compute
-        "serving_gpu_lever": min(float(g["mem_factor"]), s * serve_tp),
+        "serving_gpu_lever": min(float(g["mem_factor"]), serve_tp),
         "mem_share": float(g["mem_share"]),
     }
 
@@ -2167,9 +2173,9 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
     s = lv["smaller_model"]
     steps = [
         ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0)),
-        ("Smaller model for the same quality", dict(train_lever=s * s, memory=1.0, serving_compute_lever=s)),
-        ("+ Fixed-size memory per conversation", dict(train_lever=s * s, memory=lv["memory"], serving_compute_lever=s)),
-        ("+ Many more conversations per GPU", dict(train_lever=lv["train_lever"], memory=lv["memory"],
+        ("Smaller model trained on fewer tokens (training)", dict(train_lever=lv["train_lever"], memory=1.0,
+                                                                  serving_compute_lever=1.0)),
+        ("+ Fixed-size memory: many more conversations per GPU (inference)", dict(train_lever=lv["train_lever"], memory=lv["memory"],
                                                      serving_compute_lever=lv["serving_compute_lever"])),
     ]
     out, prev = [], 0.0
@@ -2208,15 +2214,13 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
         return cs
 
     base = run()
-    lv0 = value_bridge_levers(g)
-    s0, tp0 = lv0["smaller_model"], lv0["serving_throughput"]
     rows = [
         ("Server share of AI capex", "company tabs, row 5", False, "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
         ("Accelerator share of servers", "company tabs, row 6", False, "−15%", run(comps=scaled(3, 0.85)), "+15%", run(comps=scaled(3, 1.15))),
-        ("Smaller model for the same quality", "Inputs B23 (lever 1)", True, "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0, "serving_compute_lever": 2.0 * tp0}),
-         "×6.4", run(over={"smaller_model": 6.44, "fewer_tokens": 6.44, "serving_compute_lever": 6.44 * tp0})),
-        ("Conversations served per GPU", "Inputs B24/B25 (lever 5)", True, "×2", run(over={"serving_compute_lever": 2.0 * s0}),
-         "×3,000", run(over={"serving_compute_lever": 3000.0 * s0})),
+        ("Smaller model for the same quality", "Inputs B23 (lever 1)", True, "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0}),
+         "×6.4", run(over={"smaller_model": 6.44, "fewer_tokens": 6.44})),
+        ("Conversations served per GPU", "Inputs B24/B25 (lever 5)", True, "×12 (8k context)", run(over={"serving_compute_lever": 12.0}),
+         "×3,000", run(over={"serving_compute_lever": 3000.0})),
         ("Memory per conversation", "Inputs B2 (lever 4)", True, "÷10", run(over={"memory": 10.0}), "÷1,000", run(over={"memory": 1000.0})),
         ("Data-center share of capex", "company tabs, row 4", False, "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
         ("Training speed per token", "Levers D9/E9 (lever 3)", True, "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),

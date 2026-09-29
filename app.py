@@ -69,14 +69,18 @@ def section(title):
     st.markdown(f'<div class="xlhead">{title}</div>', unsafe_allow_html=True)
 
 
-def show_table(columns, rows, widths=None, height=None):
+def show_table(columns, rows, widths=None, height=None, wrap=False):
     """rows: list of rows; each row is a list of (text, color) where color in CMAP.
-    Renders a colored, Excel-like grid."""
+    Renders a colored, Excel-like grid. wrap=True renders a static table so long
+    text wraps instead of being cut off."""
     texts = [[c[0] for c in row] for row in rows]
     styles = [[f"background-color:{CMAP[c[1]]}" if c[1] else "" for c in row] for row in rows]
     df = pd.DataFrame(texts, columns=columns)
     smat = pd.DataFrame(styles, columns=columns)
     sty = df.style.apply(lambda _: smat, axis=None)
+    if wrap:
+        st.table(sty.hide(axis="index"))
+        return
     cfg = {col: st.column_config.Column(width=w) for col, w in (widths or {}).items()}
     st.dataframe(sty, hide_index=True, width="stretch",
                  column_config=cfg or None, height=height or (len(rows) + 1) * 35 + 3)
@@ -147,21 +151,10 @@ def sidebar_globals():
     )
 
     s.subheader("Scenario")
-    scale_opts = {
-        "1B": 1_000_000_000,
-        "10B": 10_000_000_000,
-        "100B": 100_000_000_000,
-        "1T": 1_000_000_000_000,
-        "10T": 10_000_000_000_000,
-    }
-    st.session_state.setdefault("deploy_scale", "1T")
-    scale_label = s.select_slider(
-        "🟡 Deployment scale (transformer params)",
-        options=list(scale_opts), key="deploy_scale",
-        help="Sets the equal-quality parameter ratio. The fits are measured on "
-             "47M–663M rungs, so everything past ~1B is a projection.")
-    _scale = scale_opts[scale_label]
-    _gain = param_matching_gain(_scale)
+    # No model-size slider (2026-09-29 user ruling): the equal-quality ratio is
+    # fixed at trillion-parameter scale and applies to TRAINING only; inference
+    # cost does not scale with model size.
+    _gain = param_matching_gain(DECK_DEPLOYMENT_SCALE)
     # The flop_factor widget floors at 1.0, so the preset must too (the raw
     # value can drop below 1 at high train_share / short context).
     # Today re-based 2026-09-01 (user ruling: "fold in our current results and
@@ -173,8 +166,8 @@ def sidebar_globals():
     # the deployment scale (2026-09-29: context default 262k).
     _w = {"context_tokens": wl["context_tokens"], "in_out_ratio": wl["in_out_ratio"]}
     _today = max(1.0, float(campaign_landed_flop_lever(
-        n_tf=_scale, prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824, w=_w)))
-    _landed = max(1.0, float(campaign_landed_flop_lever(n_tf=_scale, w=_w)))
+        prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824, w=_w)) / _gain)
+    _landed = max(1.0, float(campaign_landed_flop_lever(w=_w)) / _gain)
     # Labels per 2026-09-01 user ruling: plain "Today" / "Ceiling: optimized
     # kernels" (no lever numbers in the picker; the caption below carries them).
     TODAY_LABEL = "Current kernels"
@@ -210,13 +203,13 @@ def sidebar_globals():
         st.session_state["flop_factor"] = float(_landed)
     s.caption(
         f"◆ Only two inputs differ by scenario: inference throughput per GPU (lever 5: "
-        f"×{_today / _gain:.0f} current vs ×{_landed / _gain:.0f} optimized) and training speed per "
-        f"token (lever 3: ×1 in both for now). Everything else is shared. Compute lever = throughput × "
-        f"equal-quality ratio ×{_gain:.2f} at {scale_label}."
+        f"×{_today:.0f} current vs ×{_landed:.0f} optimized) and training speed per "
+        f"token (lever 3: ×1 in both for now). Everything else is shared. The smaller-model ratio "
+        f"(×{_gain:.2f}, trillion-parameter scale) applies to training only."
     )
     s.subheader("Architecture")
     g["mem_factor"] = gnum("★ 🟡 Memory reduction (×)", "mem_factor", 1, 400, 5, "%.0f")
-    g["flop_factor"] = gnum("◆ 🟡 FLOPs reduction (×)", "flop_factor", 1, 5000, 0.01, "%.2f",
+    g["flop_factor"] = gnum("◆ 🟡 Inference compute reduction (×)", "flop_factor", 1, 5000, 0.01, "%.2f",
                             help="Set by the scenario and workload above; overtype to pin it.")
     g["mem_share"] = gnum("🟡 Memory share of GPU cost", "mem_share", 0.0, 1.0, 0.05, "%.2f")
     auto_energy = s.checkbox("Auto-derive energy reduction (= cost reduction)", value=True,
@@ -449,9 +442,10 @@ def sensitivity_tab(comps, g):
     accel, opx, disc, mcap = d["accel"], d["opex_saved"] * 1000, g["discount_rate"], g["spacex_mktcap"]
     # Tiers mirror the sidebar picker (2026-09-01: pre-campaign floor and the
     # prefill-only ceiling are deleted — current numbers and upper bound only).
+    _gn = param_matching_gain(DECK_DEPLOYMENT_SCALE)  # inference lever is size-independent
     r_today = reduction_factor(dict(g, flop_factor=campaign_landed_flop_lever(
-        prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)))
-    r_ceil = reduction_factor(dict(g, flop_factor=campaign_landed_flop_lever()))
+        prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824) / _gn))
+    r_ceil = reduction_factor(dict(g, flop_factor=campaign_landed_flop_lever() / _gn))
     tiers = [(f"Current kernels {r_today:.0f}×", r_today), (f"Optimized kernels {r_ceil:.0f}×", r_ceil),
              (f"Cost-weighted (live) {reduction_factor(g):.0f}×", reduction_factor(g))]
     cols = ["Metric"] + [t[0] for t in tiers]
@@ -478,12 +472,12 @@ def sensitivity_tab(comps, g):
             (lbl, "b" if cs["pinned"] else ""),
             (f"{cs['tf_prefill_share']:.2%}", ""),
             (f"{cs['own_prefill_share_today']:.1%}", ""),
-            (f"{cs['today_lever']:,.0f}×", "b"),
-            (f"{cs['ceiling_lever']:,.0f}×", "b"),
+            (f"{cs['today_lever'] / param_matching_gain(DECK_DEPLOYMENT_SCALE):,.0f}×", "p"),
+            (f"{cs['ceiling_lever'] / param_matching_gain(DECK_DEPLOYMENT_SCALE):,.0f}×", "p"),
             (f"{cs['gap_pct']:.1%}", "y"),
         ])
     show_table(["E[context]", "TF prefill share", "Our prefill share (current)",
-                "◆ Current-kernels lever", "◆ Optimized-kernels lever", "Gap"], ctx_rows)
+                "◆ Inference lever, current kernels", "◆ Inference lever, optimized kernels", "Gap"], ctx_rows)
     st.caption("Cost = box wall-clock, not FLOPs. The transformer's decode leg is KV-bandwidth-bound "
                "(measured 1/context law) while its prefill runs near peak, so prefill is <1% of its "
                "serving cost at every context — which is why the banked ×3.936 prefill (Current kernels) "
@@ -878,9 +872,10 @@ def methodology_tab(g):
 **Engine.** A GPU is ~60% memory / ~40% compute by cost. The cost-weighted reduction is Amdahl —
 floored by the least-reduced component. Both scenarios price the full workload at a 262k-token
 average context with the aggregate-decode estimate folded in (2.5 ms/token × 64 streams): **Current
-kernels** carries prefill at the banked ×3.94 (FLOPs lever ~×1,553), **Optimized kernels** adds the
-remaining ×1.79 target (~×1,611). Only those ◆ inputs differ between the scenarios. At these levers
-the reduction is *memory*-floored (~×160 at the default ÷100), so the scenarios land within rounding
+kernels** carries prefill at the banked ×3.94 (inference lever ~×368), **Optimized kernels** adds the
+remaining ×1.79 target (~×382). Inference cost does not scale with model size; the ×4.22 smaller-model
+ratio applies to training only. Only those ◆ inputs differ between the scenarios. At these levers
+the reduction is *memory*-floored (~×141 at the default ÷100), so the scenarios land within rounding
 in dollars. Multiplying the levers is *not* physical: cost is
 additive, not multiplicative. The ×7.03 maturity factor was a flat ×5.5 assumption until 2026-08-24;
 it is now **×3.94 measured** (already banked; 2k clean-wall position of record 2026-08-29, 101.737 vs
@@ -990,7 +985,7 @@ spend cut. All six firms lose money on AI today. The *Datacenter scaling factor*
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
 **Key results.** FY25: ~\$358B AI capex vs ~\$79B AI revenue → ~−\$284B/yr burn. At the current-kernels
-levers (262k context; ~×160 cost-weighted, memory-floored) the named spend cut is **~\$162B FY25**
+levers (262k context; ~×141 cost-weighted, memory-floored) the named spend cut is **~\$162B FY25**
 (~\$2.7T capitalized at the 6% rate; global est ~\$3.4T FY25) and **~\$383B on FY2026 guidance**
 (~\$6.4T / global ~\$8.0T). Data-center shares are from the 10-K/10-Q property & equipment notes
 (2026-09-29). Current and Optimized kernels are within rounding of each other in dollars: the cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying
@@ -1012,12 +1007,11 @@ Per-company source links are on each company tab.
 
 
 # ---- audience layer: Summary / Value Bridge / Levers (mirrors the workbook) -----
-_SCALES = {"1B": 1e9, "10B": 1e10, "100B": 1e11, "1T": 1e12, "10T": 1e13}
 _LEVER_TEXT = [
     ("smaller_model", "1 · ★ Smaller model for the same quality", "PROJECTED", "×",
      "Quality-vs-size trends measured on models we trained (47M–663M parameters), extended to frontier "
      "scale: a Helarctos model matches the transformer with a fraction of the parameters.",
-     "Training and inference compute"),
+     "Training (inference cost doesn't depend on model size)"),
     ("fewer_tokens", "2 · Fewer training tokens needed", "PROJECTED", "×",
      "Compute-optimal training scales data with model size, so a smaller model needs fewer tokens.",
      "Training"),
@@ -1076,8 +1070,7 @@ def _train_shares():
 
 def _bridge_levers(g):
     kernels = "mature" if st.session_state.get("scenario") == "Optimized kernels" else "current"
-    return value_bridge_levers(g, kernels=kernels,
-                               n_tf=_SCALES[st.session_state.get("deploy_scale", "1T")])
+    return value_bridge_levers(g, kernels=kernels)
 
 
 def summary_tab(comps, g):
@@ -1105,13 +1098,13 @@ def summary_tab(comps, g):
          f"about the same speed per token → {lv['train_lever']:.0f}× fewer GPU-hours → smaller training "
          f"clusters, and the power they would draw"),
         ("Inference", t26["inference_total"],
-         f"Fixed-size state (÷{lv['memory']:.0f} memory) and {lv['serving_compute_lever']:.0f}× less compute "
-         f"per token; a GPU is bought whole, so the fleet shrinks by the binding limit → "
+         f"Fixed-size state (÷{lv['memory']:.0f} memory per conversation), so each GPU serves "
+         f"{lv['serving_compute_lever']:.0f}× more tokens; a GPU is bought whole, so the fleet shrinks by the binding limit → "
          f"{lv['serving_gpu_lever']:.0f}× fewer inference GPUs, and their power"),
     ]
     show_table(["Where", "$B / yr (capex + power)", "share", "How Helarctos does it"],
                [[(a, ""), (n1(v), "b"), (pct(v / t26["spend_cut"]), "b"), (h, "")] for a, v, h in src]
-               + [[("TOTAL", "s"), (n1(t26["spend_cut"]), "s"), ("100%", "s"), ("", "s")]])
+               + [[("TOTAL", "s"), (n1(t26["spend_cut"]), "s"), ("100%", "s"), ("", "s")]], wrap=True)
     _colored_bars([a for a, _, _ in src], [v for _, v, _ in src], SOURCE_COLORS, horizontal=True)
 
     section("By company — FY2026, $B")
@@ -1202,13 +1195,13 @@ def value_bridge_tab(comps, g):
 
 def _scenario_levers(g):
     """Lever sets for both scenarios at the sidebar workload/scale (◆ = differs)."""
-    scale = _SCALES[st.session_state.get("deploy_scale", "1T")]
     w = {"context_tokens": int(st.session_state.get("context_tokens", 262144)),
          "in_out_ratio": float(st.session_state.get("in_out_ratio", WORKLOAD["in_out_ratio"]))}
-    cur = campaign_landed_flop_lever(n_tf=scale, prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824, w=w)
-    opt = campaign_landed_flop_lever(n_tf=scale, w=w)
-    return (value_bridge_levers(dict(g, flop_factor=cur), kernels="current", n_tf=scale),
-            value_bridge_levers(dict(g, flop_factor=opt), kernels="mature", n_tf=scale))
+    gain = param_matching_gain(DECK_DEPLOYMENT_SCALE)
+    cur = campaign_landed_flop_lever(prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824, w=w) / gain
+    opt = campaign_landed_flop_lever(w=w) / gain
+    return (value_bridge_levers(dict(g, flop_factor=cur), kernels="current"),
+            value_bridge_levers(dict(g, flop_factor=opt), kernels="mature"))
 
 
 def levers_tab(g):
@@ -1227,14 +1220,14 @@ def levers_tab(g):
                      (fmt(sym, opt[k]) if differs else "same", "p" if differs else ""),
                      (status, "g" if status.startswith("MEASURED") else "y"), (what, ""), (where, "")])
     show_table(["Lever", "Active", "◆ Current kernels", "◆ Optimized kernels", "How sure are we?",
-                "What it means", "Where it saves money"], rows, widths={"What it means": "large"})
+                "What it means", "Where it saves money"], rows, wrap=True)
     st.caption("◆ purple = the only values that differ between the two scenarios. ★ = high-impact input "
                "(What Matters tab).")
     section("How they combine")
     show_table(["Fleet lever", "Value", "Built from"], [
         [("Training: GPU-hours per run fall by", ""), (f"{lv['train_lever']:.1f}×", "b"), ("levers 1 × 2 × 3", "")],
         [("Inference: memory falls by", ""), (f"÷{lv['memory']:.0f}", "b"), ("lever 4", "")],
-        [("Inference: compute falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b"), ("levers 1 × 5", "")],
+        [("Inference: compute falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b"), ("lever 5 (model size doesn't change inference cost)", "")],
         [("Inference: GPUs needed fall by", "s"), (f"{lv['serving_gpu_lever']:.0f}×", "s"),
          ("the smaller of the two — a GPU is bought whole, so the binding limit sets the fleet", "")],
         [("For reference: technical tabs' blended cut", ""),
@@ -1262,7 +1255,7 @@ def what_matters_tab(comps, g):
                      (where, ""), (lo_l, ""), (f"{lo:+,.1f}", "y" if big else "b"),
                      (hi_l, ""), (f"{hi:+,.1f}", "y" if big else "b")])
     show_table(["★", "Input", "Where to edit (workbook)", "Low case", "FY26 change, low ($B)", "High case",
-                "FY26 change, high ($B)"], rows)
+                "FY26 change, high ($B)"], rows, wrap=True)
     st.caption(f"★ = swings the answer by \\$10B or more. The discount rate changes only the capitalized value: "
                f"~\\${t['spend_cut'] / 0.04 / 1000:.1f}T at 4%, ~\\${t['spend_cut'] / 0.06 / 1000:.1f}T at 6%, "
                f"~\\${t['spend_cut'] / 0.10 / 1000:.1f}T at 10%. Takeaway: the answer is driven by how much these "

@@ -28,15 +28,15 @@ Methodology).
     cluster can be ×18 smaller. The GPUs it no longer needs are capex avoided, and their power is saved every
     year (~$136B FY2026, capex + power).
   - **Inference:** memory per conversation falls ÷100 (fixed-size state instead of a growing KV cache) and
-    compute per token falls ×1,553. A GPU is bought whole, so the inference fleet shrinks by the binding
+    each GPU serves ×368 more tokens (inference cost does not depend on model size, so the smaller
+    model helps training only). A GPU is bought whole, so the inference fleet shrinks by the binding
     limit — ×100 (~$239B FY2026, capex + power).
-  - A **one-lever-at-a-time ladder** shows where the needle moves (FY2026):
+  - A **step-by-step table** shows where the needle moves (FY2026):
 
     | Step | Spend cut |
     |---|---|
-    | Smaller model for the same quality (training only — inference GPUs stay memory-bound) | ~$136B |
-    | + Fixed-size memory per conversation | ~$320B |
-    | + Many more conversations per GPU | ~$375B |
+    | Smaller model trained on fewer tokens (training) | ~$136B |
+    | + Fixed-size memory: many more conversations per GPU (inference) | ~$375B |
 
 - **Levers**: the five Helarctos levers in plain English, each with how sure we are of it
   (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks; the
@@ -67,7 +67,7 @@ between them; every other input is shared.
 |---|---|---|
 | Inference throughput per GPU, same model size (lever 5; Inputs B24/B25) | ×368 | ×382 |
 | Training speed per token, same model size (lever 3; Levers D9/E9) | ×1 | ×1 (no credit yet) |
-| → Compute (FLOPs) lever = ×4.22 equal-quality ratio × throughput | ×1,553 | ×1,611 |
+| → Inference compute (FLOPs) lever = throughput (model size doesn't enter) | ×368 | ×382 |
 
 Both are quoted at a 262k-token average conversation. Current kernels = the banked kernel results
 (prefill ×3.94) plus the aggregate-decode ESTIMATE (2.5 ms/token × 64 resident streams per GPU,

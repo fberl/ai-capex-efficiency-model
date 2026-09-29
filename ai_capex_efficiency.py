@@ -1,4 +1,4 @@
-"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and compute x1,553 (single scenario, 262k context).
+"""AI_Capex_Efficiency — $ value of cutting AI memory 100x and inference compute x368 (262k context).
 
 Layout:
   AUDIENCE LAYER (front, plain language — added 2026-09-28):
@@ -24,10 +24,11 @@ Layout:
 
 Engine: a GPU is ~60% memory / ~40% compute by cost. SINGLE SCENARIO
 (2026-09-29 user ruling; the Today/Ceiling pair is retired): memory x100 +
-FLOPs x1,553 = inference throughput per GPU x368 at a 262k-token average
+FLOPs x368 = inference throughput per GPU at a 262k-token average
 context (decode 2.5 ms/token x 64 streams, an ESTIMATE with the
 aggregate-decode receipt PENDING; prefill at the BANKED x3.936) x the
-fit-derived equal-quality parameter ratio x4.22 at 1T -> ~x160 cost-weighted
+(inference cost does not scale with model size; the x4.22 equal-quality
+parameter ratio applies to TRAINING only) -> ~x141 cost-weighted
 on the technical tabs. The front tabs price inference on whole GPUs (x100,
 the binding memory lever). NOT 100x times 1,553x — cost is additive.
 
@@ -186,7 +187,8 @@ def build_inputs(inp):
             "=$B$27",
             "x",
             "= B27 = inference throughput per GPU at a 262k-token average context for the active scenario "
-            "(B26, picked on the Levers tab) x the equal-quality parameter ratio (B23). Edit B23-B25, or "
+            "(B26, picked on the Levers tab). Inference cost does not scale with model size, so the "
+            "equal-quality ratio (B23) applies to training only. Edit B24-B25, or "
             "overtype this cell to pin the lever. See ServingTraining for the measured background.",
             CALC_FILL,
         ),
@@ -350,8 +352,8 @@ def build_inputs(inp):
     put(inp, 26, 4, "Follows the scenario picked on the Levers tab (cell C4).", wrap=True)
     for c in ("B24", "B25"):
         key_cell(inp[c])
-    put(inp, 27, 1, "Compute (FLOPs) lever = B23 x B26", bold=True)
-    put(inp, 27, 2, "=$B$23*$B$26", fmt="0", fill=CALC_FILL, border=True, bold=True)
+    put(inp, 27, 1, "Inference compute (FLOPs) lever = B26", bold=True)
+    put(inp, 27, 2, "=$B$26", fmt="0", fill=CALC_FILL, border=True, bold=True)
     put(inp, 27, 3, "x")
     put(inp, 27, 4, "B3 points here.", wrap=True)
 
@@ -940,7 +942,7 @@ def build_sensitivity(sens):
     # have no in-sheet formula equivalent).
     header(sens, 12, "CONTEXT SENSITIVITY — prefill share of serving cost vs fleet E[context]", span=6)
     ctx_cols = ["E[context]", "TF prefill share", "Our prefill share",
-                "Compute lever (x)", "Throughput per GPU, same size (x)", ""]
+                "◆ Inference lever, current kernels (x)", "◆ Inference lever, optimized kernels (x)", ""]
     for j, name in enumerate(ctx_cols):
         put(sens, 13, 1 + j, name, bold=True, wrap=True)
     for i, cs in enumerate(serving_context_sensitivity()):
@@ -949,8 +951,9 @@ def build_sensitivity(sens):
         put(sens, rr, 1, lbl, bold=cs["pinned"])
         put(sens, rr, 2, cs["tf_prefill_share"], fmt="0.00%", fill=CALC_FILL, border=True)
         put(sens, rr, 3, cs["own_prefill_share_today"], fmt="0.0%", fill=CALC_FILL, border=True)
-        put(sens, rr, 4, cs["today_lever"], fmt="#,##0", fill=CALC_FILL, border=True)
-        put(sens, rr, 5, cs["today_lever"] / param_matching_gain(DECK_DEPLOYMENT_SCALE), fmt="#,##0.0",
+        put(sens, rr, 4, cs["today_lever"] / param_matching_gain(DECK_DEPLOYMENT_SCALE), fmt="#,##0.0",
+            fill=CALC_FILL, border=True)
+        put(sens, rr, 5, cs["ceiling_lever"] / param_matching_gain(DECK_DEPLOYMENT_SCALE), fmt="#,##0.0",
             fill=CALC_FILL, border=True)
     put(
         sens,
@@ -1196,7 +1199,7 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. Single scenario (2026-09-29): memory x100 + FLOPs x1,553 (inference throughput per GPU x368 at a 262k-token average context — decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the banked x3.936 — x equal-quality ratio x4.22 at 1T) -> ~x160 cost-weighted (Inputs B20). The front tabs price inference on whole GPUs instead (fleet shrinks by the smaller lever, x100).",
+            "Engine: GPU cost ~60% memory / ~40% compute. Single scenario (2026-09-29): memory x100 + inference compute x368 (throughput per GPU at a 262k-token average context; size-independent — decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the banked x3.936 — x equal-quality ratio x4.22 at 1T) -> ~x160 cost-weighted (Inputs B20). The front tabs price inference on whole GPUs instead (fleet shrinks by the smaller lever, x100).",
             False,
         ),
         (
@@ -1243,7 +1246,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~x160 — memory-floored at /100.",
+            "- Cost-weighted reduction ~x141 — memory-floored at /100.",
             False,
         ),
         (
@@ -1690,7 +1693,7 @@ from openpyxl.chart.label import DataLabelList
 # One color per bar (categorical slots 1-4, validated for adjacent-pair CVD
 # separation; two sit below 3:1 on white, so every bar carries its value label).
 SOURCE_COLORS = ["2A78D6", "EB6834"]  # training, inference (each incl. its power)
-LADDER_COLORS = ["A3A29C", "2A78D6", "EB6834", "1BAF7A"]  # baseline gray, then one hue per lever step
+LADDER_COLORS = ["A3A29C", "2A78D6", "EB6834"]  # baseline gray, then one hue per lever step
 
 
 def _color_bars(ch, colors):
@@ -1807,7 +1810,7 @@ def build_levers(ws, wb):
          "We measured how quality improves with size for both architectures. Extending both trends, a "
          f"Helarctos model matches a 1-trillion-parameter transformer with ~{1 / s1t:.0%} of the parameters — "
          f"{s1t:.1f}× fewer numbers to store, update and run.",
-         "Training and inference compute"),
+         "Training (inference cost doesn't depend on model size)"),
         ("2", "Fewer training tokens needed", "=C7", None, CALC_FILL, FMT_X,
          "PROJECTED — standard compute-optimal scaling (training data grows in step with model size)",
          "Frontier labs train each model on data in proportion to its size. A model "
@@ -1854,7 +1857,7 @@ def build_levers(ws, wb):
         put(ws, r, 6, status, border=True, wrap=True)
         put(ws, r, 7, meaning, border=True, wrap=True)
         put(ws, r, 8, where, border=True, wrap=True)
-        ws.row_dimensions[r].height = 78
+        ws.row_dimensions[r].height = 104
     for nm, r in (("SmallerModel", 7), ("FewerTokens", 8), ("TrainSpeed", 9),
                   ("MemoryLever", 10), ("ServeThroughput", 11)):
         _name(wb, nm, f"Levers!$C${r}")
@@ -1865,8 +1868,8 @@ def build_levers(ws, wb):
          "lever 1 × lever 2 × lever 3. Training clusters are sized to GPU-hours, so the training fleet can "
          "shrink by this much for the same training programme.", "TrainLever"),
         (15, "Inference: memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "lever 4", None),
-        (16, "Inference: compute needed per token falls by", "=SmallerModel*ServeThroughput", FMT_X,
-         "lever 1 × lever 5", "ServeComputeLever"),
+        (16, "Inference: compute needed per token falls by", "=ServeThroughput", FMT_X,
+         "lever 5 (inference cost doesn't depend on model size)", "ServeComputeLever"),
         (17, "Inference: GPUs needed fall by", "=MIN(MemoryLever,ServeComputeLever)", FMT_X,
          "A GPU is bought whole — memory and compute come together. The inference fleet has to cover whichever "
          "runs out first, so it shrinks by the SMALLER of the two levers (here the conservative ÷100 memory cap). "
@@ -2046,7 +2049,7 @@ def build_value_bridge(ws):
     row(29, "Inference fleet capex today", "=B14")
     for r, lab, f, fmt, note in (
         (30, "Memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "fixed-size state (lever 4)"),
-        (31, "Compute needed per token falls by", "=ServeComputeLever", FMT_X, "smaller model × more conversations per GPU (levers 1 × 5)"),
+        (31, "Compute needed per token falls by", "=ServeComputeLever", FMT_X, "many more conversations per GPU (lever 5)"),
         (32, "GPUs needed fall by — whichever limit binds", "=ServeGPULever", FMT_X, "the smaller of the two: a GPU is bought whole"),
     ):
         put(ws, r, 1, lab, wrap=True, bold=(r == 32))
@@ -2079,9 +2082,9 @@ def build_value_bridge(ws):
     ws.row_dimensions[48].height = 32
     steps = [
         ("Today's transformer fleet", "1", "1", "1"),
-        ("Smaller model for the same quality (levers 1, 2)", "=SmallerModel^2", "1", "=SmallerModel"),
-        ("+ Fixed-size memory per conversation (lever 4)", "=SmallerModel^2", "=MemoryLever", "=SmallerModel"),
-        ("+ Many more conversations per GPU (lever 5)", "=TrainLever", "=MemoryLever", "=ServeComputeLever"),
+        ("Smaller model trained on fewer tokens — training (levers 1–3)", "=TrainLever", "1", "1"),
+        ("+ Fixed-size memory: many more conversations per GPU — inference (levers 4, 5)", "=TrainLever",
+         "=MemoryLever", "=ServeComputeLever"),
     ]
     TF, SF, ACC, OPX = T["D"], T["E"], T["B"], T["I"]
     for i, (lab, lt, lm, lc) in enumerate(steps):
@@ -2097,13 +2100,11 @@ def build_value_bridge(ws):
         put(ws, r, 7, "=F49" if i == 0 else f"=F{r}-F{r - 1}", '+"$"#,##0"B";-"$"#,##0"B";"—"',
             CALC_FILL, border=True)
     _para(ws, 55,
-          "Read this as: the smaller model alone removes nearly all of the TRAINING bill (fewer parameters AND "
-          "fewer tokens compound) but no inference GPUs — at long context a transformer's inference GPUs are full of "
-          "memory (the growing KV cache), not busy computing, and a smaller model doesn't change that. Fixed-size "
-          "memory unlocks inference, until compute becomes the limit; many more conversations per GPU lifts that "
-          "limit. By then ~99% of the chip bill is gone: bigger multiples can't add much, because a cost can only "
-          "fall to zero once. That is why this workbook reports dollars, not multiples. The order is the "
-          "storyline; the end point does not depend on it.", 1, 9, 62)
+          "Read this as: TRAINING savings come from the smaller model (fewer parameters AND fewer tokens "
+          "compound, ~18× fewer GPU-hours). INFERENCE savings come from fixed-size memory, which lets each GPU "
+          "hold many more long conversations — model size doesn't change inference cost. Each fleet then "
+          "shrinks by ~94–99%: bigger multiples can't add much, because a cost can only fall to zero once. "
+          "That is why this workbook reports dollars, not multiples.", 1, 9, 48)
 
     _sub(ws, 57, "CROSS-CHECK against the technical Totals tab", 9)
     row(58, "Totals tab, FY2026 spend cut (memory and compute priced separately, ~154×)", "=Totals!$F$13")
@@ -2244,7 +2245,7 @@ def build_summary(ws, d26, d25):
          '&TEXT(TrainLever,"0")&"× fewer GPU-hours → smaller training clusters, and the power they would draw."'),
         ("Inference", ("G", "K"),
          '="A transformer\'s memory grows with every token of every live conversation; Helarctos keeps a '
-         'fixed-size state (÷"&TEXT(MemoryLever,"0")&" memory) and does "&TEXT(ServeComputeLever,"0")&"× less compute per token. '
+         'fixed-size state (÷"&TEXT(MemoryLever,"0")&" memory per conversation), so each GPU serves "&TEXT(ServeComputeLever,"0")&"× more tokens. '
          'A GPU is bought whole, so the fleet shrinks by whichever limit binds: "&TEXT(ServeGPULever,"0")&"× fewer inference GPUs, and their power."'),
     ]
     for i, (lab, col, how) in enumerate(src):
@@ -2254,7 +2255,7 @@ def build_summary(ws, d26, d25):
         put(ws, r, 3, f"=B{r}/$B${16 + len(src)}", FMT_P, CALC_FILL, border=True)
         put(ws, r, 4, how, wrap=True)
         ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=7)
-        ws.row_dimensions[r].height = 62
+        ws.row_dimensions[r].height = 92
     tr = 16 + len(src)
     put(ws, tr, 1, "TOTAL", bold=True, border=True)
     put(ws, tr, 2, f"=SUM(B16:B{tr - 1})", FMT_B, KPI_FILL, border=True, bold=True)
