@@ -173,7 +173,7 @@ def sidebar_globals():
             key="in_out_ratio", format="%.1f",
             help="Input tokens per generated token. ~10:1 = code/agent traces; 50-100:1 = RAG."),
         "context_tokens": int(wl_box.number_input(
-            "Average context (tokens)", min_value=1024, max_value=1048576, step=1024,
+            "Average conversation length (tokens)", min_value=1024, max_value=1048576, step=1024,
             key="context_tokens", format="%d",
             help="Average conversation length over the workload. H4–H6 are quoted at 262k; changing it "
                  "resets H5 and H6 to their values at the new context.")),
@@ -488,7 +488,7 @@ def sensitivity_tab(comps, g):
     ])
     st.caption("Base = SpaceX accelerator capex (matches the SpaceX tab at the conservative dc_scale=0), not total capex.")
 
-    section("Context sensitivity — prefill share of serving cost vs fleet E[context]")
+    section("Conversation-length sensitivity — prompt share of serving cost vs average conversation length")
     ctx_rows = []
     for cs in serving_context_sensitivity():
         _t = int(cs["context_tokens"])
@@ -501,7 +501,7 @@ def sensitivity_tab(comps, g):
             (f"{cs['ceiling_lever'] / param_matching_gain(DECK_DEPLOYMENT_SCALE):,.0f}×", "p"),
             (f"{cs['gap_pct']:.1%}", "y"),
         ])
-    show_table(["E[context]", "TF prefill share", "Our prefill share (current)",
+    show_table(["Conversation length", "TF prefill share", "Our prefill share (current)",
                 "◆ Inference lever, current kernels", "◆ Inference lever, optimized kernels", "Gap"], ctx_rows)
     st.caption("Cost = box wall-clock, not FLOPs. The transformer's decode leg is KV-bandwidth-bound "
                "(measured 1/context law) while its prefill runs near peak, so prefill is <1% of its "
@@ -866,7 +866,7 @@ def methodology_tab(g):
     section("Assumptions & how each value is derived")
     ek = ("derived", "b") if g.get("opex_reduction_override") is None else ("override", "y")
     rows = [
-        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("O(1) state vs O(T) KV cache. MEASURED 2026-08-14, full model (Serving·Training tab): 64 concurrent 262k streams on one GPU in 1.62 GB vs the transformer's 1 at 51.5 GB (a 2nd OOMs); 25.4 MB of state per stream vs 197 KB of KV per token of context — ×2,032 at 262k. ÷100 is conservative", "")],
+        [("Memory reduction (×)", ""), (f"{g['mem_factor']:.0f}×", "y"), ("assumption", "y"), ("H4. Fixed-size state vs a growing KV cache. MEASURED 2026-08-14, full model (Serving·Training tab): 64 concurrent 262k conversations on one GPU in 1.62 GB vs the transformer's 1 at 51.5 GB (a 2nd OOMs); 25.4 MB of state per conversation vs 197 KB of KV per token — ×2,032 at 262k, used as H4. Frontier-size models with grouped-query attention would be ~×208 (estimate)", "")],
         [("FLOPs reduction (×)", ""), (f"{g['flop_factor']:.2f}×", "y"), ("assumption", "y"), ("◆ Set by the scenario (Current kernels by default) = the full-workload serving lever at a 262k-token average context × the FIT-DERIVED equal-quality parameter ratio. Serving: decode 2.5 ms/token × the measured 64-stream cell (aggregate-decode ESTIMATE, receipt pending), prefill at the BANKED " + f"×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} (2k clean-wall position of record 2026-08-29). Parameter ratio: the sealed refit's fits (4 rungs per family) cross at 392M and give the transformer's quality on 23.7% of the params at 1T → ×4.22 — a projection of two fits, not a measurement. Ceiling = same at the full ×{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} MEASURED × ×{KERNEL_SPEEDUP_REMAINING_TARGET:.2f} TARGET, the funded 8k-win gate)" + "; measured TRAINING cluster throughput ×1.39 matched load → ×1.70 deep", "")],
         [("Compute cost that runs AGAINST us", ""), (f"×{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}", "y"), ("measured", "b"), (f"RE-BASED 2026-08-24 (one GH200, ONE layer, fwd+bwd, bf16, checkpointing off both arms, against a MODERN transformer block — 24Q/4KV, head_dim 256, RoPE 64, gated attention): a bAttention training step costs ×{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f} MORE at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_ms_2k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_2k']:.1f} ms/step) and ×{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f} at T=8,192 ({KERNEL_CAMPAIGN_20260824['battn_ms_8k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_8k']:.1f}); fwd ×{KERNEL_CAMPAIGN_20260824['fwd_ratio']:.2f}, bwd ×{KERNEL_CAMPAIGN_20260824['bwd_ratio']:.2f}. It read ×{KERNEL_CAMPAIGN_20260824['step_ratio_2k_precampaign']:.2f} ({KERNEL_CAMPAIGN_20260824['battn_ms_2k_precampaign']:.1f} ms) the same morning — ×{KERNEL_SPEEDUP_REALIZED_20260824:.2f} banked in a day — and ×{STEP_GAP_20260814['gap_against_battn']:.2f} on the older d1536/27L fp16 601-step receipt (dtype_trio_v4.json), which is now superseded as a headline. At equal quality the T=2,048 figure falls to ×{KERNEL_CAMPAIGN_20260824['step_ratio_2k'] * param_matching_fraction(DECK_DEPLOYMENT_SCALE):.2f}. Training is still excluded from the serving claim", "")],
         [("Training PEAK MEMORY that runs AGAINST us", ""), (f"×{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.2f}", "y"), ("measured", "b"), (f"Same 2026-08-24 frame: ×{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB) and ×{KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f} at T=8,192, down from ×{KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f} the same morning. This is TRAINING peak memory — NOT the ÷100 memory lever above, which is SERVING state and is unaffected. It is not an input to the cost model; it caps per-GPU batch density", "")],
@@ -900,8 +900,8 @@ average context with the aggregate-decode estimate folded in (2.5 ms/token × 64
 kernels** carries prefill at the banked ×3.94 (inference lever ~×368), **Optimized kernels** adds the
 remaining ×1.79 target (~×382). Inference cost does not scale with model size; the ×4.22 smaller-model
 ratio applies to training only. Only those ◆ inputs differ between the scenarios. At these levers
-the reduction is *memory*-floored (~×141 at the default ÷100), so the scenarios land within rounding
-in dollars. Multiplying the levers is *not* physical: cost is
+inference is limited by tokens per GPU (H5 × H6 ≈ ×368), not by memory (H4, ×2,032); either way ~99.7%
+of the inference chip bill is gone, so the scenarios land within rounding in dollars. Multiplying the levers is *not* physical: cost is
 additive, not multiplicative. The ×7.03 maturity factor was a flat ×5.5 assumption until 2026-08-24;
 it is now **×3.94 measured** (already banked; 2k clean-wall position of record 2026-08-29, 101.737 vs
 59.268 ms) × **×1.79 target** (the funded 8k-win gate).
@@ -943,19 +943,20 @@ pre-campaign receipt and is retired as a headline. At equal quality the T=2,048 
 i.e. a win — but at *matched size and short context* it is still a loss, so the serving
 claim continues to exclude training. Training **peak memory** runs against us the same way and by a
 similar amount: **×1.58 at T=2,048** (17,087.5 vs 10,823.6 MiB), ×1.57 at T=8,192, from ×2.83 that
-morning. That is *training* memory and is a different quantity from the ÷100 lever above, which is
-*serving* state.
+morning. That is *training* memory and is a different quantity from the H4 memory lever above, which
+is *serving* state.
 
 **The remaining gap is a funded program, and its numbers are TARGETS.** The 8k-win gate is a T=8,192
 step at or below **83.08 ms** — beating the transformer — which needs ×1.79 more, 44% of the step.
 Named levers: recompute removal (~−12.8 ms), backward-fold + occupancy redesign (~3× headroom in the
 dominant fused kernel), and copies elimination (24.8% of the step). Memory target ×0.88, i.e. parity or
-below. None of that has a receipt yet, and it is exactly the factor sitting inside the Ceiling scenario.
+below. None of that has a receipt yet, and it is exactly the factor sitting inside the Optimized-kernels scenario.
 
 Both phases use measured throughput, with the transformer granted an idealized mature stack (paged
 attention, KV ÷8, bandwidth-floor serving) — strictly more generous than our measured lane. The memory
-lever is unchanged at ÷100, grounded in serving-state math (**43–315× smaller serving memory at 1M
-tokens**) and measured directly as a concurrency result (below).
+lever (H4) is the measured ×2,032 at a 262k conversation, consistent with serving-state math (**43–315×
+smaller serving memory at 1M tokens** for frontier geometries) and measured directly as a concurrency
+result (below).
 
 **Where this goes negative, stated plainly.** At 100:1 input:output and 8k context the blend is
 **×0.28** — the transformer wins. A training share above **~0.30** takes the blend below 1 (0.2 →
@@ -1009,14 +1010,14 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results.** FY25: ~\$358B AI capex vs ~\$79B AI revenue → ~−\$284B/yr burn. At the current-kernels
-levers (262k context; ~×141 cost-weighted, memory-floored) the named spend cut is **~\$162B FY25**
-(~\$2.7T capitalized at the 6% rate; global est ~\$3.4T FY25) and **~\$383B on FY2026 guidance**
-(~\$6.4T / global ~\$8.0T). Data-center shares are from the 10-K/10-Q property & equipment notes
+**Key results.** FY25: ~\$357B AI capex vs ~\$79B AI revenue → ~−\$284B/yr burn. At the current-kernels
+levers (262k conversations; technical-tab reduction ~×724) the named spend cut is **~\$163B FY25**
+(~\$2.7T capitalized at the 6% rate; global est ~\$3.4T FY25) and **~\$385B on FY2026 guidance**
+(~\$6.4T / global ~\$8.0T). The front tabs, which price whole GPUs, read ~\$377B for FY2026. Data-center shares are from the 10-K/10-Q property & equipment notes
 (2026-09-29). Current and Optimized kernels are within rounding of each other in dollars: the cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying
 capex, shares and revenue never move.
 
-**Sensitivity.** `capex_avoided ∝ (1 − 1/R)` is 0.99 at R ≈ 150, so the dollar headline is essentially
+**Sensitivity.** `capex_avoided ∝ (1 − 1/R)` is 0.999 at R ≈ 700, so the dollar headline is essentially
 insensitive to the compute lever at these levels. The discount rate IS a first-order lever on the
 capitalized figures: they scale as 1/rate.
 

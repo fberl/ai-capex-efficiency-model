@@ -965,8 +965,8 @@ def build_sensitivity(sens):
     # Static values computed by ai_capex_model.serving_context_sensitivity() at
     # build time (the levers need the model's prefill/decode interpolators, which
     # have no in-sheet formula equivalent).
-    header(sens, 12, "CONTEXT SENSITIVITY — prefill share of serving cost vs fleet E[context]", span=6)
-    ctx_cols = ["E[context]", "TF prefill share", "Our prefill share",
+    header(sens, 12, "CONVERSATION-LENGTH SENSITIVITY — prompt share of serving cost vs average conversation length", span=6)
+    ctx_cols = ["Conversation length", "TF prefill share", "Our prefill share",
                 "◆ Inference lever, current kernels (x)", "◆ Inference lever, optimized kernels (x)", ""]
     for j, name in enumerate(ctx_cols):
         put(sens, 13, 1 + j, name, bold=True, wrap=True)
@@ -1317,7 +1317,7 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Multiplying the levers (100x * ~1,553x) is NOT physical: cost is additive (Amdahl), not multiplicative.",
+            "- Multiplying the levers (memory x2,032 * tokens per GPU x368) is NOT physical: a GPU is bought whole, so the fleet shrinks by the smaller of the two.",
             False,
         ),
         (
@@ -1440,8 +1440,8 @@ def build_serving_training(ws):
         f"({KERNEL_CAMPAIGN_20260824['battn_ms_2k_precampaign']:.1f} ms) the same morning. Training PEAK MEMORY, same "
         f"frame: {KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f}x at T=2,048 "
         f"({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB), "
-        f"from {KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f}x -- that is TRAINING memory, not the /100 "
-        f"SERVING lever. TARGET (no receipt): T=8,192 step <= {KERNEL_CAMPAIGN_20260824['target_8k_win_gate_ms']:.2f} ms "
+        f"from {KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f}x -- that is TRAINING memory, not the H4 "
+        f"serving-memory lever. TARGET (no receipt): T=8,192 step <= {KERNEL_CAMPAIGN_20260824['target_8k_win_gate_ms']:.2f} ms "
         f"and memory {KERNEL_CAMPAIGN_20260824['target_mem_ratio']:.2f}x.", wrap=True)
 
     put(ws, 19, 1, "Derived", bold=True)
