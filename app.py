@@ -1023,8 +1023,10 @@ Per-company source links are on each company tab.
 # ---- audience layer: Summary / Value Bridge / Levers / What Matters (mirrors the workbook) ----
 LEV = {x["code"]: x for x in HELARCTOS_LEVERS}
 _LEVER_TEXT = {  # code: (how sure are we?, what it means, saves money in)
-    "H1": ("PROJECTED — quality trends measured on models we trained (47M–663M parameters), extended to 1T",
-           f"A Helarctos model matches a 1-trillion-parameter transformer's quality with "
+    "H1": ("PROJECTED — quality trends measured on models we trained (47M–663M parameters), extended to "
+           "~1T dense-equivalent",
+           f"A Helarctos model matches a ~1T dense-equivalent transformer — about what today's 5–6T-total "
+           f"mixture-of-experts flagships amount to — with "
            f"~{param_matching_fraction(DECK_DEPLOYMENT_SCALE):.0%} of the parameters: "
            f"{param_matching_gain(DECK_DEPLOYMENT_SCALE):.1f}× fewer numbers to store, update and run.",
            "Training (inference cost doesn't depend on model size)"),
@@ -1354,7 +1356,9 @@ def levers_tab(comps, g):
     st.markdown("- Only AI chips and the power they draw are counted. Buildings, power infrastructure and "
                 "networking around them would shrink too — upside, not in these numbers.\n"
                 "- Training is priced on GPU-hours only; no memory credit is taken on training clusters.\n"
-                "- H1 is a projection: quality trends measured up to 663M parameters, extended to trillion scale.\n"
+                "- H1 is a projection: quality trends measured up to 663M parameters, extended to ~1T "
+                "dense-equivalent — about what today's 5–6T-total mixture-of-experts flagships (Grok 5 at 6T, "
+                "Kimi K3 at 2.8T) amount to.\n"
                 "- The saving is spend no longer needed for the same AI output; firms will likely reinvest it. "
                 "Cash basis; capitalized = yearly saving ÷ discount rate.")
 
@@ -1365,7 +1369,8 @@ WM_WHY = {
     "Accelerator share of servers": "The GPU/TPU share of server spend — same one-for-one effect. From teardowns "
         "(67–80%).",
     "Smaller model for the same quality": "The biggest Helarctos-specific assumption: it drives the whole training "
-        "saving. A projection from models up to 663M parameters to trillion scale.",
+        "saving. A projection from models up to 663M parameters to ~1T dense-equivalent (today's 5–6T "
+        "mixture-of-experts flagships). High case: a 5T dense model.",
     "Conversations served per GPU": "Only matters if it collapses: inference GPUs stay limited by memory (÷100) "
         "as long as this stays above ×100.",
     "Memory per conversation": "Sets how far inference GPUs shrink. Measured ×2,000 at 262k; ÷100 is our cap.",

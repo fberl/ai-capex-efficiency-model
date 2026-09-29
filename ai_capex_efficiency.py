@@ -308,7 +308,7 @@ def build_inputs(inp):
     put(inp, 20, 4, "Derived")
     put(inp, 20, 5, "1 / residual. The $ reduction used by the technical tabs (Totals, company tabs).", wrap=True)
     header(inp, 22, "HELARCTOS LEVERS H1 and H5 — 262k-token average context; ◆ purple = differs by scenario", span=5)
-    lever_cell(put(inp, 23, 1, "H1 · Equal-quality parameter ratio at 1T (smaller model; H2 = same) ★"))
+    lever_cell(put(inp, 23, 1, "H1 · Equal-quality parameter ratio at ~1T dense-equivalent (smaller model; H2 = same) ★"))
     put(inp, 23, 2, 4.2185, fmt="0.00", fill=HLEV_FILL, border=True)
     key_cell(inp["B23"])
     put(inp, 23, 3, "x")
@@ -317,7 +317,7 @@ def build_inputs(inp):
         "FIT-DERIVED (sealed 2026-08-14 refit): bAttention matches the transformer fit's quality on "
         "23.7% of the params at 1T -> x4.22 compute per token at equal quality. 84.2% at 1B, 55.2% at "
         "10B, 36.2% at 100B, 15.5% at 10T (x6.44). A projection of the two fits, not a measurement. "
-        "Same in both scenarios.", wrap=True)
+        "Same in both scenarios. Scale: ~1T dense-equivalent: about what today's 5-6T-total mixture-of-experts flagships amount to (Grok 5 at 6T, Kimi K3 at 2.8T; a mixture-of-experts model runs only a fraction of its parameters per token and performs roughly like a dense model of sqrt(total x active) size).", wrap=True)
     s1t = param_matching_gain(DECK_DEPLOYMENT_SCALE)
     _cur = TODAY_FLOP_LEVER_20260901 / s1t
     _opt = CAMPAIGN_LANDED_FLOP_LEVER / s1t
@@ -1852,9 +1852,11 @@ def build_levers(ws, wb):
     r9 = LV_LEVER_ROW0
     rows = {
         "H1": ("=Inputs!$B$23", None, FMT_X2,
-               "PROJECTED — quality trends measured on models we trained (47M–663M parameters), extended to 1T",
-               f"A Helarctos model matches a 1-trillion-parameter transformer's quality with ~{1 / s1t:.0%} of the "
-               f"parameters: {s1t:.1f}× fewer numbers to store, update and run.",
+               "PROJECTED — quality trends measured on models we trained (47M–663M parameters), extended to "
+               "~1T dense-equivalent",
+               f"A Helarctos model matches a ~1T dense-equivalent transformer — about what today's 5–6T-total "
+               f"mixture-of-experts flagships amount to — with ~{1 / s1t:.0%} of the parameters: {s1t:.1f}× fewer "
+               f"numbers to store, update and run.",
                "Training (inference cost doesn't depend on model size)"),
         "H2": (f"=C{r9}", None, FMT_X2,
                "PROJECTED — standard compute-optimal scaling",
@@ -1981,7 +1983,8 @@ def build_levers(ws, wb):
         "Only AI chips and the power they draw are counted. The buildings, power infrastructure and networking "
         "around them would shrink too — upside, not in these numbers.",
         "Training is priced on GPU-hours only; no memory credit is taken on training clusters.",
-        "H1 is a projection: quality trends measured up to 663M parameters, extended to trillion scale.",
+        "H1 is a projection: quality trends measured up to 663M parameters, extended to ~1T dense-equivalent — "
+        "about what today's 5–6T-total mixture-of-experts flagships (Grok 5 at 6T, Kimi K3 at 2.8T) amount to.",
         "The saving is spend no longer needed for the same AI output; firms will likely reinvest it. Cash basis; "
         "'capitalized' = yearly saving ÷ discount rate (6%, roughly the long-bond yield).",
     ]
@@ -2197,7 +2200,8 @@ WHY_IT_MATTERS = {
     "Accelerator share of servers": "The GPU/TPU share of server spend — same one-for-one effect. From chip and "
         "server teardowns (67–80%; a GB200 rack's GPUs are ~75–80% of its price).",
     "Smaller model for the same quality": "The biggest Helarctos-specific assumption: it drives the whole training "
-        "saving (smaller model × fewer tokens). A projection from models up to 663M parameters to trillion scale.",
+        "saving (smaller model × fewer tokens). A projection from models up to 663M parameters to ~1T "
+        "dense-equivalent (today's 5–6T mixture-of-experts flagships). High case: a 5T dense model.",
     "Conversations served per GPU": "Only matters if it collapses: inference GPUs stay limited by memory (÷100) "
         "as long as this stays above ×100; the estimate is ×368 at 262k.",
     "Memory per conversation": "Sets how far inference GPUs shrink. Measured ×2,000 at 262k; ÷100 is our cap.",

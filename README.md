@@ -30,6 +30,12 @@ Training GPU-hours fall by H1 × H2 × H3 (×18). Inference GPUs fall by the sma
 a GPU is bought whole, so the fleet covers whichever need runs out first. Inference cost does not
 depend on model size, so H1 helps training only.
 
+**Model size.** H1 is quoted at **~1T dense-equivalent**. Frontier labs no longer disclose sizes, and
+almost all large models are now mixture-of-experts: Grok 5 is announced at 6T, Kimi K3 is 2.8T, but
+each runs only a fraction of its parameters per token. Such a model performs roughly like a dense model
+of √(total × active) size, so a 5–6T flagship with ~200B active is about 1T dense-equivalent. Using 5T
+dense instead would add ~$3.6B to FY2026 (What Matters tab).
+
 ## Start here: Summary, Value Bridge, Levers, What Matters
 
 The workbook and the app both open on four plain-language tabs. The engineering ledger sits behind
