@@ -2085,6 +2085,33 @@ TRAIN_SPEED_SAME_SIZE = 1.0
 TRAIN_SPEED_BY_SCENARIO = {"current": TRAIN_SPEED_SAME_SIZE, "mature": TRAIN_SPEED_SAME_SIZE}
 
 
+# The five Helarctos levers as every surface labels them (workbook + app).
+# H1-H5 are the ONLY inputs about the architecture; everything else (capex,
+# data-center / server / accelerator / training shares, $ per GPU, power,
+# electricity, discount rate) is market, company or modelling data.
+# high_impact = moves the FY2026 saving by >= $10B in sensitivity_table();
+# by_scenario = differs between Current kernels and Optimized kernels.
+HELARCTOS_LEVERS = [
+    {"code": "H1", "key": "smaller_model", "name": "Smaller model for the same quality",
+     "fleet": "Training", "high_impact": True, "by_scenario": False},
+    {"code": "H2", "key": "fewer_tokens", "name": "Fewer training tokens",
+     "fleet": "Training", "high_impact": False, "by_scenario": False},
+    {"code": "H3", "key": "train_speed", "name": "Training speed per token (same model size)",
+     "fleet": "Training", "high_impact": False, "by_scenario": True},
+    {"code": "H4", "key": "memory", "name": "Memory per live conversation",
+     "fleet": "Inference", "high_impact": True, "by_scenario": False},
+    {"code": "H5", "key": "serving_throughput", "name": "Conversations served per GPU",
+     "fleet": "Inference", "high_impact": True, "by_scenario": True},
+]
+
+
+def lever_label(code, markers=True):
+    """'H5 · Conversations served per GPU ◆★' — ◆ differs by scenario, ★ high impact."""
+    lv = next(x for x in HELARCTOS_LEVERS if x["code"] == code)
+    m = ("◆" if lv["by_scenario"] else "") + ("★" if lv["high_impact"] else "")
+    return f"{code} · {lv['name']}" + (f" {m}" if markers and m else "")
+
+
 def value_bridge_levers(g=None, kernels="current", n_tf=None):
     """The five audience-facing Helarctos levers + the two fleet levers they
     compose into. kernels: 'current' (Today) or 'mature' (Ceiling: optimized
@@ -2215,20 +2242,20 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
 
     base = run()
     rows = [
-        ("Server share of AI capex", "company tabs, row 5", False, "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
-        ("Accelerator share of servers", "company tabs, row 6", False, "−15%", run(comps=scaled(3, 0.85)), "+15%", run(comps=scaled(3, 1.15))),
-        ("Smaller model for the same quality", "Inputs B23 (lever 1)", True, "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0}),
+        ("Server share of AI capex", "company tabs, row 5", "", "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
+        ("Accelerator share of servers", "company tabs, row 6", "", "−15%", run(comps=scaled(3, 0.85)), "+15%", run(comps=scaled(3, 1.15))),
+        ("Smaller model for the same quality", "Inputs B23", "H1+H2", "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0}),
          "×6.4", run(over={"smaller_model": 6.44, "fewer_tokens": 6.44})),
-        ("Conversations served per GPU", "Inputs B24/B25 (lever 5)", True, "×12 (8k context)", run(over={"serving_compute_lever": 12.0}),
+        ("Conversations served per GPU", "Inputs B24/B25", "H5", "×12 (8k context)", run(over={"serving_compute_lever": 12.0}),
          "×3,000", run(over={"serving_compute_lever": 3000.0})),
-        ("Memory per conversation", "Inputs B2 (lever 4)", True, "÷10", run(over={"memory": 10.0}), "÷1,000", run(over={"memory": 1000.0})),
-        ("Data-center share of capex", "company tabs, row 4", False, "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
-        ("Training speed per token", "Levers D9/E9 (lever 3)", True, "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
-        ("Electricity rate", "Inputs B9", False, "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
-        ("Wall power per GPU", "Inputs B8", False, "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
-        ("Training share of the chip fleet", "Levers C22:C27", False, "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
+        ("Memory per conversation", "Inputs B2", "H4", "÷10", run(over={"memory": 10.0}), "÷1,000", run(over={"memory": 1000.0})),
+        ("Data-center share of capex", "company tabs, row 4", "", "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
+        ("Training speed per token", "Levers D11/E11", "H3", "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
+        ("Electricity rate", "Inputs B9", "", "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
+        ("Wall power per GPU", "Inputs B8", "", "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
+        ("Training share of the chip fleet", "Levers C34:C39", "", "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
          "all 60%", run(shares={c["name"]: 0.6 for c in companies})),
-        ("Memory share of GPU cost", "Inputs B4", False, "40%", run(gg=dict(g, mem_share=0.4)), "80%", run(gg=dict(g, mem_share=0.8))),
+        ("Memory share of GPU cost", "Inputs B4", "", "40%", run(gg=dict(g, mem_share=0.4)), "80%", run(gg=dict(g, mem_share=0.8))),
     ]
     out = [(n, w, h, lo_l, lo - base, hi_l, hi - base) for n, w, h, lo_l, lo, hi_l, hi in rows]
     return sorted(out, key=lambda r: -max(abs(r[4]), abs(r[6])))

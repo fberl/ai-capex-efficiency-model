@@ -12,61 +12,69 @@ The headline is dollars, not a multiple. A GPU is bought whole, so a fleet shrin
 falls least; once that is ~100×, 99% of the chip bill is already gone and bigger multiples only move
 the last 1%. The dollars are set by how much these firms spend on chips.
 
+## The five Helarctos levers (H1–H5)
+
+Only five inputs are about the Helarctos architecture. Every surface (workbook and app) labels them
+**H1–H5** on a **teal** background; everything else — capex, data-centre / server / accelerator /
+training shares, $ per GPU, power, electricity, discount rate — is market, company or modelling data.
+
+| Lever | Value | Shrinks | How sure |
+|---|---|---|---|
+| **H1** Smaller model for the same quality ★ | ×4.22 (Inputs B23) | Training | PROJECTED |
+| **H2** Fewer training tokens | ×4.22 (= H1) | Training | PROJECTED |
+| **H3** Training speed per token, same size ◆ | ×1 (Levers D11/E11) | Training | ASSUMPTION (no credit) |
+| **H4** Memory per live conversation ★ | ÷100 (Inputs B2) | Inference GPUs | MEASURED ×2,000, capped |
+| **H5** Conversations served per GPU ◆★ | ×368 / ×382 (Inputs B24/B25) | Inference GPUs | ESTIMATE |
+
+Training GPU-hours fall by H1 × H2 × H3 (×18). Inference GPUs fall by the smaller of H4 and H5 (×100):
+a GPU is bought whole, so the fleet covers whichever need runs out first. Inference cost does not
+depend on model size, so H1 helps training only.
+
 ## Start here: Summary, Value Bridge, Levers, What Matters
 
 The workbook and the app both open on four plain-language tabs. The engineering ledger sits behind
 them as a technical appendix (Totals, Inputs, Sensitivity, CostLadder, ServingTraining, Evidence,
 Methodology).
 
-- **Summary**: the FY2026 and FY2025 headline, where the saving comes from — **Training** (~$136B
-  FY2026) and **Inference** (~$239B), each including the power its GPUs would have drawn — and a
-  per-company table.
-- **Value Bridge**: a step-by-step walk from disclosed capex to the saving. The chip fleet is split
-  into a **training fleet** and an **inference fleet** using per-company training shares (25–55%).
-  - **Training:** a same-quality Helarctos model is ×4.2 smaller and trains on ×4.2 fewer tokens, at
-    about the same speed per token (no speed credit taken) — ×18 fewer GPU-hours, so the training
-    cluster can be ×18 smaller. The GPUs it no longer needs are capex avoided, and their power is saved every
-    year (~$136B FY2026, capex + power).
-  - **Inference:** memory per conversation falls ÷100 (fixed-size state instead of a growing KV cache) and
-    each GPU serves ×368 more tokens (inference cost does not depend on model size, so the smaller
-    model helps training only). A GPU is bought whole, so the inference fleet shrinks by the binding
-    limit — ×100 (~$239B FY2026, capex + power).
-  - A **step-by-step table** shows where the needle moves (FY2026):
+- **Summary**: the FY2026 / FY2025 headline; where the FY2026 saving comes from — **Training**
+  (~$136B) and **Inference** (~$239B), each including the power its GPUs would have drawn — with the
+  Helarctos levers behind each fleet listed underneath it; a per-company table; a legend.
+- **Value Bridge**: a step-by-step walk from disclosed capex to the saving (spend → split the chip
+  fleet into training and inference → training → inference → result), then the levers switched on
+  one at a time, a cross-check against the technical Totals tab, and the per-company engine tables.
 
-    | Step | Spend cut |
-    |---|---|
-    | Smaller model trained on fewer tokens (training) | ~$136B |
-    | + Fixed-size memory: many more conversations per GPU (inference) | ~$375B |
+  | Step | Spend cut, FY2026 |
+  |---|---|
+  | Smaller model trained on fewer tokens — training (H1–H3) | ~$136B |
+  | + Fixed-size memory: many more conversations per GPU — inference (H4, H5) | ~$375B |
 
-- **Levers**: the five Helarctos levers in plain English, each with how sure we are of it
-  (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks; the
-  scenario picker; the per-company training shares. Training speed per token is treated as
-  comparable to a transformer at the same size (no credit); the speed advantage is in inference,
-  where one GPU serves many long conversations at once.
-- **What Matters**: each input moved to a plausible low and high value, one at a time, and what it
-  does to the FY2026 saving. The chip-share inputs (server and accelerator shares, ±15% → ±$50–56B)
-  and three Helarctos levers (smaller model, conversations per GPU, memory — each only if it falls
-  far below today's value) are the ones that matter. Memory share of GPU cost has no effect on the
-  front tabs.
+- **Levers**: the scenario switch (C4); the five Helarctos levers with how sure we are of each, what
+  it means and where it saves money; how they combine; then, separately, the **market & company
+  data** the front tabs use (with live values and where to edit them) and the per-company training
+  shares (25–55%).
+- **What Matters**: each input moved to a plausible low and high value, one at a time, grouped into
+  **Helarctos levers** and **market & company data**, with a tornado chart (teal = Helarctos lever,
+  gray = market data). The chip-share inputs (server and accelerator shares, ±15% → ±$50–56B) move the
+  answer more than any Helarctos lever; the levers matter only if they fall far below today's values.
 
-**Cell markers** (workbook and app): **★ with an orange border** = a high-impact input (swings FY2026
-by $10B or more); **◆ with a purple fill** = one of the only values that differ between the two
-scenarios.
+**Cell markers** (workbook and app): **teal + H1–H5** = a Helarctos lever; **★ with an orange
+border** = a high-impact input (swings FY2026 by $10B or more); **◆ with a purple fill** = one of the
+only values that differ between the two scenarios.
 
-The bridge takes no memory credit on training and prices inference on whole GPUs. It lands within ~1% of
-the technical Totals tab ($375B vs $383B FY2026), which prices memory (~60% of a GPU's cost) and
+The bridge takes no memory credit on training and prices inference on whole GPUs. It lands within ~2%
+of the technical Totals tab ($375B vs $383B FY2026), which prices memory (~60% of a GPU's cost) and
 compute (~40%) separately. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs;
 an import-time check asserts it reproduces the Totals engine exactly when given the same levers.
 
 ## Scenarios
 
-Two scenarios, picked on the Levers tab (workbook) or in the sidebar (app). **Only the ◆ cells differ**
+Two scenarios, picked on the Levers tab, cell C4 (workbook) or in the sidebar (app). **Only the ◆ cells differ**
 between them; every other input is shared.
 
 | ◆ Input | Current kernels (default) | Optimized kernels |
 |---|---|---|
-| Inference throughput per GPU, same model size (lever 5; Inputs B24/B25) | ×368 | ×382 |
-| Training speed per token, same model size (lever 3; Levers D9/E9) | ×1 | ×1 (no credit yet) |
+| H5 Inference throughput per GPU, same model size (Inputs B24/B25) | ×368 | ×382 |
+| H3 Training speed per token, same model size (Levers D11/E11) | ×1 | ×1 (no credit yet) |
 | → Inference compute (FLOPs) lever = throughput (model size doesn't enter) | ×368 | ×382 |
 
 Both are quoted at a 262k-token average conversation. Current kernels = the banked kernel results
@@ -74,7 +82,7 @@ Both are quoted at a 262k-token average conversation. Current kernels = the bank
 measurement pending); Optimized kernels = the funded kernel programme lands (prefill ×7.03, TARGET).
 At 262k the dollars are within rounding of each other (FY2026 ~$375B front tabs / ~$383B Totals in
 both), because inference GPUs are limited by memory (÷100), not compute. The scenario would matter
-if the optimized kernels also sped up training — enter that under lever 3.
+if the optimized kernels also sped up training — enter that under H3.
 
 ## Where the numbers come from
 
@@ -109,7 +117,7 @@ if the optimized kernels also sped up training — enter that under lever 3.
 - **Per company:** `total capex × data-center share × server share × accelerator share` → accelerator
   (chip) capex → fleet → power/opex → avoided spend → capitalized value. FY2025 actual + FY2026.
 - **Technical engine (Totals, company tabs):** cost-weighted reduction
-  `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 154×.
+  `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 141×.
 - **Audience engine (Summary, Value Bridge):** training fleet ÷ GPU-hour lever (×18); inference fleet ÷
   min(memory lever, compute lever) (×100); each fleet's power shrinks with it and is folded into its
   number.
@@ -120,10 +128,12 @@ if the optimized kernels also sped up training — enter that under lever 3.
 ## Live app
 
 Deploy free on [Streamlit Community Cloud](https://share.streamlit.io) — see **Deploy** below.
-The app is a **tab-for-tab mirror of the workbook** (Summary, Value Bridge, Levers, each company,
-Totals, Inputs, Sensitivity, CostLadder, Serving·Training, Evidence, Methodology). Edit the 🟡/🟢
-cells (globals in the sidebar; per-company in the ✏️ panel on each company tab; training shares on
-the Levers tab) and every grid recomputes live.
+The app is a **tab-for-tab mirror of the workbook** (Summary, Value Bridge, Levers, What Matters,
+each company, Totals, Inputs, Sensitivity, CostLadder, Serving·Training, Evidence, Methodology), with
+the same colours and markers. The sidebar is grouped the same way: the scenario, then the
+**Helarctos levers** (H4, H5, and the workload behind H5), then **market & modelling data**
+(technical-only inputs folded away). Per-company capex and shares are in the ✏️ panel on each company
+tab; training shares on the Levers tab. Every grid recomputes live.
 
 ## Contents
 
@@ -159,11 +169,14 @@ uv run --with openpyxl python ai_capex_efficiency.py
 `python ai_capex_model.py` runs the model's self-checks, including a guard that the quoted headline
 figures still match what the model computes.
 
-## Color / assumption convention (mirrored in the spreadsheet)
+## Colour / marker convention (workbook and app)
 
-- 🟡 **assumption** — a lever we chose; editable in the app
-- 🟢 **disclosed data** — from filings or markets
-- 🔵 **derived** — a formula
+- **teal, H1–H5** — a Helarctos lever (the only inputs about the architecture)
+- **yellow** — a market, company or modelling assumption you can edit
+- **green** — disclosed data, from filings or markets
+- **blue** — a formula
+- **◆ purple** — differs between Current kernels and Optimized kernels
+- **★ orange border** — high impact (moves the FY2026 saving by $10B or more)
 
 ## Background: the measured serving cells (2026-08-14)
 
