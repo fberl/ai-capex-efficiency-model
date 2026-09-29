@@ -43,7 +43,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from ai_capex_model import (  # single source of truth for defaults
-    GLOBALS, COMPANIES, INFRA_SHARE_BASIS,
+    GLOBALS, COMPANIES, INFRA_SHARE_BASIS, TRAIN_SPEED_SAME_SIZE,
     CEILING_PREFILL_SPEEDUP,
     TODAY_FLOP_LEVER_20260901, CAMPAIGN_LANDED_FLOP_LEVER,
     CAMPAIGN_LANDED_20260831, DECK_DEPLOYMENT_SCALE,
@@ -1660,7 +1660,7 @@ def build_serving_training(ws):
 # =====================================================================================
 # AUDIENCE LAYER (2026-09-28): Summary / Value Bridge / Levers.
 # Plain-language front tabs. Same engine as the company tabs, with the chip fleet
-# split into a TRAINING fleet and a SERVING fleet so every dollar is attributable
+# split into a TRAINING fleet and an INFERENCE fleet so every dollar is attributable
 # to the Helarctos lever that produces it (ai_capex_model.value_bridge is the
 # Python twin; main() cross-checks nothing numerically, the model self-check does).
 # Formulas use workbook-level NAMES (TrainLever, ServeGPULever, ...) so a reader can
@@ -1674,8 +1674,8 @@ from openpyxl.chart.label import DataLabelList
 
 # One color per bar (categorical slots 1-4, validated for adjacent-pair CVD
 # separation; two sit below 3:1 on white, so every bar carries its value label).
-SOURCE_COLORS = ["2A78D6", "EB6834", "EDA100"]  # training, serving GPUs, power
-LADDER_COLORS = ["A3A29C", "2A78D6", "EB6834", "1BAF7A", "EDA100"]  # baseline gray, then one hue per lever step
+SOURCE_COLORS = ["2A78D6", "EB6834"]  # training, inference (each incl. its power)
+LADDER_COLORS = ["A3A29C", "2A78D6", "EB6834", "1BAF7A"]  # baseline gray, then one hue per lever step
 
 
 def _color_bars(ch, colors):
@@ -1699,7 +1699,6 @@ def _color_bars(ch, colors):
 
 from ai_capex_model import (
     CAMPAIGN_LANDED_20260831 as _LANDED,
-    VALUE_BRIDGE_CURRICULUM, campaign_landed_train_advantage,
     serving_context_sensitivity as _ctx_sens,
 )
 
@@ -1771,41 +1770,34 @@ def build_levers(ws, wb):
     for j, h in enumerate(heads, start=1):
         put(ws, 6, j, h, bold=True, fill=SUB_FILL, border=True, wrap=True)
 
-    k_today = campaign_landed_train_advantage(VALUE_BRIDGE_CURRICULUM, kernels="current",
-                                              quality_matched=False)
-    k_opt = campaign_landed_train_advantage(VALUE_BRIDGE_CURRICULUM, kernels="mature",
-                                            quality_matched=False)
     sens = {int(d["context_tokens"]): d["today_lever"] for d in _ctx_sens()}
     s1t = param_matching_gain(DECK_DEPLOYMENT_SCALE)
     tp = lambda ctx: sens[ctx] / s1t  # noqa: E731
-    mix = " / ".join(f"{sh:.0%} at {ctx // 1024}k" for ctx, sh in
-                     TRAINING_CURRICULA[VALUE_BRIDGE_CURRICULUM]["mix"])
     levers = [
         ("1", "Smaller model for the same quality", "=Inputs!$B$23", "=Inputs!$B$23", CALC_FILL, FMT_X,
          "PROJECTED — trend fitted on models we trained (47M–663M parameters), extended to frontier scale",
          "We measured how quality improves with size for both architectures. Extending both trends, a "
          f"Helarctos model matches a 1-trillion-parameter transformer with ~{1 / s1t:.0%} of the parameters — "
          f"{s1t:.1f}× fewer numbers to store, update and run.",
-         "Training AND serving compute"),
+         "Training and inference compute"),
         ("2", "Fewer training tokens needed", "=D7", "=E7", CALC_FILL, FMT_X,
          "PROJECTED — standard compute-optimal scaling (training data grows in step with model size)",
          "Frontier labs train each model on data in proportion to its size. A model "
          f"{s1t:.1f}× smaller reaches its best quality on ~{s1t:.1f}× fewer tokens.",
          "Training"),
-        ("3", "Faster training per token on long documents", k_today, k_opt, INPUT_FILL, FMT_X,
-         "Today: MEASURED cost per token at each document length; the training mix is illustrative. "
-         "Optimized: TARGET",
-         "A transformer's cost per token rises with document length (each token looks back over all the "
-         "earlier ones); Helarctos' stays flat. Over a modern training mix (" + mix + " tokens) that is "
-         f"{k_today:.1f}× cheaper per token. On short documents alone the transformer is still faster "
-         f"today ({1 / KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f}× at 2k tokens).",
+        ("3", "Training speed per token (same model size)", TRAIN_SPEED_SAME_SIZE, TRAIN_SPEED_SAME_SIZE,
+         INPUT_FILL, FMT_X,
+         "ASSUMPTION — roughly comparable to a transformer; no speed credit taken",
+         "At the same model size, Helarctos trains at roughly the same speed per token as a transformer, so "
+         "we count no training speed-up. The training saving comes entirely from levers 1 and 2: a smaller "
+         "model trained on fewer tokens. (Where Helarctos is much faster is inference — lever 5.)",
          "Training"),
         ("4", "Memory per live conversation", "=Inputs!$B$2", "=Inputs!$B$2", CALC_FILL, FMT_DIV,
          "MEASURED — 2,000× at 262k tokens; we use ÷100 to stay conservative",
          "A transformer keeps a memory (the 'KV cache') that grows with every token of every live "
          "conversation: ~197 KB per token, ~51 GB for one 262k-token conversation. Helarctos keeps a "
          "fixed-size state (~25 MB) however long the conversation gets.",
-         "Serving GPUs (the memory limit)"),
+         "Inference GPUs (the memory limit)"),
         ("5", "More conversations served per GPU", "=Inputs!$B$24/Inputs!$B$23",
          "=Inputs!$B$25/Inputs!$B$23", CALC_FILL, FMT_X,
          "ESTIMATE — built on MEASURED concurrency and prompt-processing speed; per-token generation speed "
@@ -1814,7 +1806,7 @@ def build_levers(ws, wb):
          "transformer fits 1–2 at 262k), and no growing cache is re-read for each new token. At the same "
          f"model size: ~{tp(8192):.0f}× more tokens per GPU at an 8k-token average context, "
          f"~{tp(131072):.0f}× at 128k (used here), ~{tp(262144):.0f}× at 256k.",
-         "Serving GPUs (the compute limit)"),
+         "Inference GPUs (the compute limit)"),
     ]
     for i, (num, lab, today, opt, fill, fmt, status, meaning, where) in enumerate(levers):
         r = 7 + i
@@ -1836,14 +1828,14 @@ def build_levers(ws, wb):
         (14, "Training: GPU-hours per training run fall by", "=SmallerModel*FewerTokens*TrainSpeed", FMT_X,
          "lever 1 × lever 2 × lever 3. Training clusters are sized to GPU-hours, so the training fleet can "
          "shrink by this much for the same training programme.", "TrainLever"),
-        (15, "Serving: memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "lever 4", None),
-        (16, "Serving: compute needed per token falls by", "=SmallerModel*ServeThroughput", FMT_X,
+        (15, "Inference: memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "lever 4", None),
+        (16, "Inference: compute needed per token falls by", "=SmallerModel*ServeThroughput", FMT_X,
          "lever 1 × lever 5", "ServeComputeLever"),
-        (17, "Serving: GPUs needed fall by", "=MIN(MemoryLever,ServeComputeLever)", FMT_X,
-         "A GPU is bought whole — memory and compute come together. The serving fleet has to cover whichever "
+        (17, "Inference: GPUs needed fall by", "=MIN(MemoryLever,ServeComputeLever)", FMT_X,
+         "A GPU is bought whole — memory and compute come together. The inference fleet has to cover whichever "
          "runs out first, so it shrinks by the SMALLER of the two levers (here the conservative ÷100 memory cap). "
          "Multiplying them (100 × 793 = 79,000×) would be wrong.", "ServeGPULever"),
-        (18, "For reference: technical tabs' blended serving cut", "=Inputs!$B$20", FMT_X,
+        (18, "For reference: technical tabs' blended inference cut", "=Inputs!$B$20", FMT_X,
          "The technical appendix (Totals, company tabs) prices memory (~60% of a GPU's cost) and compute (~40%) "
          "separately and blends them (~154×). Same chip bill, under $1B apart on FY2026.", None),
     ]
@@ -1856,7 +1848,7 @@ def build_levers(ws, wb):
 
     _sub(ws, 20, "TRAINING SHARE OF EACH COMPANY'S AI-CHIP FLEET — estimates (no company discloses this)", 8)
     _para(ws, 21,
-          "Analysts put training at 30–45% of AI compute in 2026 (Gartner, Deloitte; the rest is serving "
+          "Analysts put training at 30–45% of AI compute in 2026 (Gartner, Deloitte; the rest is inference, i.e. serving "
           "users). Per-company estimates below follow what each firm is known to be building.", 1, 8, 30)
     why = {
         "Microsoft": "Inference-tilted: Azure serves the OpenAI API and Copilot; frontier training is moving to dedicated Stargate sites.",
@@ -1897,9 +1889,9 @@ def _company_ref(name, col, row):
 
 def _detail_table(ws, r0, year_col, label):
     """Per-company engine table. Returns {col_letter: total_cell}."""
-    heads = ["Company", "AI-chip capex", "Training share", "Training fleet", "Serving fleet",
-             "Training capex avoided", "Serving capex avoided", "Serving fleet needed",
-             "Chip capex avoided", "Power & ops today", "Power & ops saved", "TOTAL spend cut",
+    heads = ["Company", "AI-chip capex", "Training share", "Training fleet", "Inference fleet",
+             "Training capex avoided", "Inference capex avoided", "Chip capex avoided",
+             "Power & ops today", "Training power saved", "Inference power saved", "TOTAL spend cut",
              "AI spend (capex + power)", "% of AI spend cut", "AI revenue", "Net AI today",
              "Net AI with Helarctos"]
     _sub(ws, r0, f"DETAIL BY COMPANY — {label} ($B). The engine behind every number above.", len(heads))
@@ -1917,12 +1909,12 @@ def _detail_table(ws, r0, year_col, label):
         put(ws, r, 5, f"=B{r}-D{r}", FMT_B, CALC_FILL, border=True)
         put(ws, r, 6, f"=D{r}*(1-1/TrainLever)", FMT_B, CALC_FILL, border=True)
         put(ws, r, 7, f"=E{r}*(1-1/ServeGPULever)", FMT_B, CALC_FILL, border=True)
-        put(ws, r, 8, f"=E{r}/ServeGPULever", '"$"#,##0.0"B"', CALC_FILL, border=True)
-        put(ws, r, 9, f"=F{r}+G{r}", FMT_B, CALC_FILL, border=True)
-        put(ws, r, 10, f"={_company_ref(n, year_col, 34)}", '"$"#,##0.0"B"', CALC_FILL, border=True)
-        put(ws, r, 11, f"=IF(B{r}>0,J{r}*I{r}/B{r},0)", '"$"#,##0.0"B"', CALC_FILL, border=True)
-        put(ws, r, 12, f"=I{r}+K{r}", FMT_B, CALC_FILL, border=True, bold=True)
-        put(ws, r, 13, f"={_company_ref(n, year_col, 10)}+J{r}", FMT_B, CALC_FILL, border=True)
+        put(ws, r, 8, f"=F{r}+G{r}", FMT_B, CALC_FILL, border=True)
+        put(ws, r, 9, f"={_company_ref(n, year_col, 34)}", '"$"#,##0.0"B"', CALC_FILL, border=True)
+        put(ws, r, 10, f"=IF(B{r}>0,I{r}*F{r}/B{r},0)", '"$"#,##0.0"B"', CALC_FILL, border=True)
+        put(ws, r, 11, f"=IF(B{r}>0,I{r}*G{r}/B{r},0)", '"$"#,##0.0"B"', CALC_FILL, border=True)
+        put(ws, r, 12, f"=H{r}+J{r}+K{r}", FMT_B, CALC_FILL, border=True, bold=True)
+        put(ws, r, 13, f"={_company_ref(n, year_col, 10)}+I{r}", FMT_B, CALC_FILL, border=True)
         put(ws, r, 14, f"=L{r}/M{r}", FMT_P, CALC_FILL, border=True)
         put(ws, r, 15, f"={_company_ref(n, year_col, 32)}", FMT_B, CALC_FILL, border=True)
         put(ws, r, 16, f"=O{r}-M{r}", FMT_B, CALC_FILL, border=True)
@@ -1939,7 +1931,7 @@ def _detail_table(ws, r0, year_col, label):
             f, fmt = f"=L{t}/M{t}", FMT_P
         else:
             f = f"=SUM({col}{first}:{col}{last})"
-            fmt = '"$"#,##0.0"B"' if col in "HJK" else FMT_B
+            fmt = '"$"#,##0.0"B"' if col in "IJK" else FMT_B
         put(ws, t, j, f, fmt, CALC_FILL, border=True, bold=True)
         tot[col] = f"{col}{t}"
     return tot, t
@@ -1956,7 +1948,7 @@ def build_value_bridge(ws):
     _title(ws, "VALUE BRIDGE — how the Helarctos architecture turns into dollars (FY2026, $B)", 9)
     _para(ws, 2,
           "Read top to bottom: what the six largest AI spenders spend, how their chip fleet splits between "
-          "TRAINING models and SERVING users, what Helarctos changes in each, and the dollars that follow. "
+          "TRAINING models and INFERENCE (serving users), what Helarctos changes in each, and the dollars that follow. "
           "Every cell is a live formula; the levers live on the Levers tab.", 1, 9, 32)
 
     d26, _ = _detail_table(ws, VB_DETAIL26_ROW, "C", "FY2026 (estimate)")
@@ -1975,7 +1967,7 @@ def build_value_bridge(ws):
     row(6, "AI data-centre capex", sumc(10), note="Strips non-AI spend (e.g. Amazon retail logistics).")
     row(7, "…of which AI chips (GPUs, TPUs)", f"={T['B']}", bold=True,
         note="The part Helarctos shrinks. Buildings, power and networking are NOT counted here (upside).")
-    row(8, "Power & operations for those chips, per year", f"={T['J']}")
+    row(8, "Power & operations for those chips, per year", f"={T['I']}")
     row(9, "AI revenue", f"={T['O']}", note="Disclosed run-rates (Microsoft, Amazon) or estimates (others).")
     row(10, "Net AI cash result today", f"={T['P']}", bold=True, note="AI revenue − AI capex − power. They are all losing money on AI today.")
 
@@ -1984,16 +1976,16 @@ def build_value_bridge(ws):
     row(13, "Training fleet — builds new models", f"={T['D']}",
         note="Estimated per company, 25%–55% (Levers tab); chip-weighted average shown.")
     put(ws, 13, 3, f"=B13/B7", FMT_P, CALC_FILL, border=True)
-    row(14, "Serving fleet — answers users", f"={T['E']}")
+    row(14, "Inference fleet — answers users", f"={T['E']}")
     put(ws, 14, 3, f"=B14/B7", FMT_P, CALC_FILL, border=True)
 
-    _sub(ws, 16, "STEP 3 — TRAINING: fewer GPU-hours per model → smaller training clusters → capex avoided", 9)
+    _sub(ws, 16, "STEP 3 — TRAINING: fewer GPU-hours per model → smaller training clusters", 9)
     put(ws, 16, 3, "lever", bold=True)
     row(17, "Training fleet capex today", "=B13")
     lv_rows = [
         (18, "Helarctos model is smaller for the same quality", "=SmallerModel", "fewer parameters to update at every step (lever 1)"),
         (19, "…so it needs fewer training tokens", "=FewerTokens", "compute-optimal training (lever 2)"),
-        (20, "…and each token trains faster on long documents", "=TrainSpeed", "flat cost per token vs. rising (lever 3)"),
+        (20, "…at about the same speed per token", "=TrainSpeed", "comparable at the same size — no speed credit taken (lever 3)"),
     ]
     for r, lab, f, note in lv_rows:
         put(ws, r, 1, lab, wrap=True)
@@ -2003,51 +1995,49 @@ def build_value_bridge(ws):
     put(ws, 21, 3, "=TrainLever", FMT_X, CALC_FILL, border=True, bold=True)
     _para(ws, 21, "multiply the three", 4, 9)
     row(22, "Training fleet needed with Helarctos", "=B17/C21")
-    row(23, "TRAINING CAPEX AVOIDED", "=B17-B22", bold=True, fill=KPI_FILL)
-    _para(ws, 24,
+    row(23, "Training capex avoided", "=B17-B22")
+    row(24, "Power & operations those GPUs would have drawn", f"={T['J']}", note="power scales with the fleet")
+    row(25, "TRAINING SAVING (capex + power)", "=B23+B24", bold=True, fill=KPI_FILL)
+    _para(ws, 26,
           '="How training savings become capex savings: labs size their training clusters to the GPU-hours '
           'their training runs need. If every model of a given quality needs ~"&TEXT(TrainLever,"0")&"× fewer '
           'GPU-hours, the same training programme runs on a cluster ~"&TEXT(TrainLever,"0")&"× smaller — the '
-          'GPUs that never have to be bought are capex avoided (and the power they would have drawn is opex '
-          'avoided, Step 5)."', 1, 9, 48)
+          'GPUs that never have to be bought are capex avoided, and the power they would have drawn is saved '
+          'every year."', 1, 9, 48)
 
-    _sub(ws, 26, "STEP 4 — SERVING: less memory and more conversations per GPU → fewer serving GPUs", 9)
-    put(ws, 26, 3, "lever", bold=True)
-    row(27, "Serving fleet capex today", "=B14")
+    _sub(ws, 28, "STEP 4 — INFERENCE: less memory and more conversations per GPU → fewer inference GPUs", 9)
+    put(ws, 28, 3, "lever", bold=True)
+    row(29, "Inference fleet capex today", "=B14")
     for r, lab, f, fmt, note in (
-        (28, "Memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "fixed-size state (lever 4)"),
-        (29, "Compute needed per token falls by", "=ServeComputeLever", FMT_X, "smaller model × more conversations per GPU (levers 1 × 5)"),
-        (30, "GPUs needed fall by — whichever limit binds", "=ServeGPULever", FMT_X, "the smaller of the two: a GPU is bought whole"),
+        (30, "Memory needed per conversation falls by", "=MemoryLever", FMT_DIV, "fixed-size state (lever 4)"),
+        (31, "Compute needed per token falls by", "=ServeComputeLever", FMT_X, "smaller model × more conversations per GPU (levers 1 × 5)"),
+        (32, "GPUs needed fall by — whichever limit binds", "=ServeGPULever", FMT_X, "the smaller of the two: a GPU is bought whole"),
     ):
-        put(ws, r, 1, lab, wrap=True, bold=(r == 30))
-        put(ws, r, 3, f, fmt, CALC_FILL, border=True, bold=(r == 30))
+        put(ws, r, 1, lab, wrap=True, bold=(r == 32))
+        put(ws, r, 3, f, fmt, CALC_FILL, border=True, bold=(r == 32))
         _para(ws, r, note, 4, 9)
-    put(ws, 31, 1, "Serving fleet needed with Helarctos")
-    put(ws, 31, 2, "=B27/C30", FMT_B, CALC_FILL, border=True)
-    row(32, "SERVING CAPEX AVOIDED", "=B27-B31", bold=True, fill=KPI_FILL,
+    put(ws, 33, 1, "Inference fleet needed with Helarctos")
+    put(ws, 33, 2, "=B29/C32", FMT_B, CALC_FILL, border=True)
+    row(34, "Inference capex avoided", "=B29-B33")
+    row(35, "Power & operations those GPUs would have drawn", f"={T['K']}", note="power scales with the fleet")
+    row(36, "INFERENCE SAVING (capex + power)", "=B34+B35", bold=True, fill=KPI_FILL,
         note="A GPU brings memory and compute together; the fleet must cover whichever runs out first. "
-             "Transformers at long context run out of MEMORY (the growing KV cache), so memory is the limit "
-             "we relieve first; compute then binds only if it falls less than memory.")
+             "Transformers at long context run out of MEMORY (the growing KV cache) first.")
 
-    _sub(ws, 33, "STEP 5 — Power & operations shrink with the fleet", 9)
-    row(34, "Power & operations for the chip fleet today", "=B8")
-    row(35, "Power & operations saved per year", f"={T['K']}", note="Same share as the chip fleet cut.")
-
-    _sub(ws, 37, "RESULT — FY2026", 9)
-    row(38, "Training capex avoided", "=B23")
-    row(39, "Serving capex avoided", "=B32")
-    row(40, "Power & operations saved", "=B35")
-    row(41, "SPEND HELARCTOS MAKES UNNECESSARY, per year", "=B38+B39+B40", bold=True, fill=KPI_FILL,
+    _sub(ws, 38, "RESULT — FY2026", 9)
+    row(39, "Training (capex + power)", "=B25")
+    row(40, "Inference (capex + power)", "=B36")
+    row(41, "SPEND HELARCTOS MAKES UNNECESSARY, per year", "=B39+B40", bold=True, fill=KPI_FILL,
         note="Ties to the detail table total below.")
     row(42, "…as a share of all AI spend", f"=B41/{T['M']}", FMT_P, bold=True)
-    row(43, "…as a share of the AI-chip bill", f"=(B23+B32)/B7", FMT_P)
+    row(43, "…as a share of the AI-chip bill", f"=(B23+B34)/B7", FMT_P)
     row(44, "Net AI cash result with Helarctos", "=B10+B41", bold=True)
     row(45, "Value of the saving, capitalized (÷ discount rate)", "=B41/Inputs!$B$6/1000", FMT_T,
         note="Simple perpetuity at the Inputs discount rate (6%).")
 
     _sub(ws, 47, "WHERE THE NEEDLE MOVES — switch the Helarctos levers on one at a time (FY2026)", 9)
-    lh = ["Step", "Training GPU-hours fall by", "Serving memory falls by", "Serving compute falls by",
-          "Chip fleet cut (serving GPUs fall by the smaller)", "Spend cut, $B/yr", "Added by this step"]
+    lh = ["Step", "Training GPU-hours fall by", "Inference memory falls by", "Inference compute falls by",
+          "Chip fleet cut (inference GPUs fall by the smaller)", "Spend cut, $B/yr", "Added by this step"]
     for j, h in enumerate(lh, start=1):
         put(ws, 48, j, h, bold=True, border=True, wrap=True, fill=SUB_FILL)
     ws.row_dimensions[48].height = 32
@@ -2055,10 +2045,9 @@ def build_value_bridge(ws):
         ("Today's transformer fleet", "1", "1", "1"),
         ("Smaller model for the same quality (levers 1, 2)", "=SmallerModel^2", "1", "=SmallerModel"),
         ("+ Fixed-size memory per conversation (lever 4)", "=SmallerModel^2", "=MemoryLever", "=SmallerModel"),
-        ("+ Many more conversations per GPU (lever 5)", "=SmallerModel^2", "=MemoryLever", "=ServeComputeLever"),
-        ("+ Faster training on long documents (lever 3)", "=TrainLever", "=MemoryLever", "=ServeComputeLever"),
+        ("+ Many more conversations per GPU (lever 5)", "=TrainLever", "=MemoryLever", "=ServeComputeLever"),
     ]
-    TF, SF, ACC, OPX = T["D"], T["E"], T["B"], T["J"]
+    TF, SF, ACC, OPX = T["D"], T["E"], T["B"], T["I"]
     for i, (lab, lt, lm, lc) in enumerate(steps):
         r = 49 + i
         put(ws, r, 1, lab, border=True, wrap=True, bold=(i == len(steps) - 1))
@@ -2073,16 +2062,16 @@ def build_value_bridge(ws):
             CALC_FILL, border=True)
     _para(ws, 55,
           "Read this as: the smaller model alone removes nearly all of the TRAINING bill (fewer parameters AND "
-          "fewer tokens compound) but no serving GPUs — at long context a transformer's serving GPUs are full of "
+          "fewer tokens compound) but no inference GPUs — at long context a transformer's inference GPUs are full of "
           "memory (the growing KV cache), not busy computing, and a smaller model doesn't change that. Fixed-size "
-          "memory unlocks serving, until compute becomes the limit; many more conversations per GPU lifts that "
-          "limit. The last levers have big multiples but add little, because by then over 95% of the cost is "
-          "already gone: a cost can only fall to zero once. That is why this workbook reports dollars, not "
-          "multiples. The order is the storyline; the end point does not depend on it.", 1, 9, 62)
+          "memory unlocks inference, until compute becomes the limit; many more conversations per GPU lifts that "
+          "limit. By then ~99% of the chip bill is gone: bigger multiples can't add much, because a cost can only "
+          "fall to zero once. That is why this workbook reports dollars, not multiples. The order is the "
+          "storyline; the end point does not depend on it.", 1, 9, 62)
 
     _sub(ws, 57, "CROSS-CHECK against the technical Totals tab", 9)
     row(58, "Totals tab, FY2026 spend cut (memory and compute priced separately, ~154×)", "=Totals!$F$13")
-    row(59, "This bridge (training on GPU-hours, serving on whole GPUs)", "=B41")
+    row(59, "This bridge (training on GPU-hours, inference on whole GPUs)", "=B41")
     row(60, "Difference", "=B59-B58",
         note="Small by design: both remove ~99% of the chip bill. Totals also honours the Inputs datacenter-"
              "scaling toggle (default 0); this bridge counts chips only.")
@@ -2092,8 +2081,8 @@ def build_value_bridge(ws):
     ch.type = "bar"
     ch.title = "Spend cut as each lever switches on ($B/yr, FY2026)"
     ch.y_axis.title = "$B per year"
-    ch.add_data(Reference(ws, min_col=6, min_row=48, max_row=53), titles_from_data=True)
-    ch.set_categories(Reference(ws, min_col=1, min_row=49, max_row=53))
+    ch.add_data(Reference(ws, min_col=6, min_row=48, max_row=48 + len(steps)), titles_from_data=True)
+    ch.set_categories(Reference(ws, min_col=1, min_row=49, max_row=48 + len(steps)))
     ch.legend = None
     _color_bars(ch, LADDER_COLORS)
     ch.height, ch.width = 7.5, 16
@@ -2102,13 +2091,13 @@ def build_value_bridge(ws):
 
 
 def build_summary(ws, d26, d25):
-    widths(ws, {"A": 40, "B": 15, "C": 15, "D": 15, "E": 15, "F": 15, "G": 17})
+    widths(ws, {"A": 40, "B": 15, "C": 15, "D": 15, "E": 15, "F": 15, "G": 15, "H": 17})
     _title(ws, "HELARCTOS × AI CAPEX — what a more efficient AI architecture is worth", 7)
     V = lambda cell: f"{VB}!{cell}"  # noqa: E731
     put(ws, 2, 1,
         f'="In FY2026 the six largest AI spenders (Microsoft, Alphabet, Amazon, Meta, Oracle, SpaceX) will spend '
         f'~$"&TEXT({V(d26["M"])},"#,##0")&"B on AI and earn ~$"&TEXT({V(d26["O"])},"#,##0")&"B from it. '
-        f'Helarctos models do the same AI work — training and serving at the same quality — on a fraction of the '
+        f'Helarctos models do the same AI work — training and inference at the same quality — on a fraction of the '
         f'hardware. This page shows how much of that spend becomes unnecessary, and where the savings come from."',
         wrap=True)
     ws.merge_cells("A2:G2")
@@ -2140,38 +2129,37 @@ def build_summary(ws, d26, d25):
         put(ws, r, j, f"={V(d['L'])}/Inputs!$B$6/1000", FMT_T, CALC_FILL, border=True)
 
     _sub(ws, 14, "WHERE THE SAVINGS COME FROM — FY2026, $B per year", 7)
-    for j, h in enumerate(["Source", "$B / yr", "share"], start=1):
+    for j, h in enumerate(["Where", "$B / yr (capex + power)", "share"], start=1):
         put(ws, 15, j, h, bold=True, border=True)
     put(ws, 15, 4, "How Helarctos does it", bold=True, border=True)
     ws.merge_cells("D15:G15")
     src = [
-        ("Training clusters", "F",
+        ("Training", ("F", "J"),
          '="Same-quality model is "&TEXT(SmallerModel,"0.0")&"× smaller and needs "&TEXT(FewerTokens,"0.0")'
-         '&"× fewer training tokens; each token trains "&TEXT(TrainSpeed,"0.0")&"× faster on long documents → "'
-         '&TEXT(TrainLever,"0")&"× fewer GPU-hours → training clusters (and their capex) shrink."'),
-        ("Serving GPUs", "G",
+         '&"× fewer training tokens (training speed per token is about the same) → "'
+         '&TEXT(TrainLever,"0")&"× fewer GPU-hours → smaller training clusters, and the power they would draw."'),
+        ("Inference", ("G", "K"),
          '="A transformer\'s memory grows with every token of every live conversation; Helarctos keeps a '
          'fixed-size state (÷"&TEXT(MemoryLever,"0")&" memory) and does "&TEXT(ServeComputeLever,"0")&"× less compute per token. '
-         'A GPU is bought whole, so the fleet shrinks by whichever limit binds: "&TEXT(ServeGPULever,"0")&"× fewer serving GPUs."'),
-        ("Power & operations", "K", "Fewer chips draw less power and need less cooling."),
+         'A GPU is bought whole, so the fleet shrinks by whichever limit binds: "&TEXT(ServeGPULever,"0")&"× fewer inference GPUs, and their power."'),
     ]
     for i, (lab, col, how) in enumerate(src):
         r = 16 + i
         put(ws, r, 1, lab, border=True, bold=True)
-        put(ws, r, 2, f"={V(d26[col])}", FMT_B, CALC_FILL, border=True)
+        put(ws, r, 2, "=" + "+".join(V(d26[c]) for c in col), FMT_B, CALC_FILL, border=True)
         put(ws, r, 3, f"=B{r}/$B${16 + len(src)}", FMT_P, CALC_FILL, border=True)
         put(ws, r, 4, how, wrap=True)
         ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=7)
-        ws.row_dimensions[r].height = 46
+        ws.row_dimensions[r].height = 62
     tr = 16 + len(src)
     put(ws, tr, 1, "TOTAL", bold=True, border=True)
     put(ws, tr, 2, f"=SUM(B16:B{tr - 1})", FMT_B, KPI_FILL, border=True, bold=True)
     put(ws, tr, 3, f"=SUM(C16:C{tr - 1})", FMT_P, CALC_FILL, border=True)
     _para(ws, tr + 1, "Step-by-step build and the one-lever-at-a-time view: Value Bridge tab.", 1, 7)
 
-    _sub(ws, 23, "BY COMPANY — FY2026, $B", 7)
-    heads = ["Company", "AI spend", "Helarctos saving / yr", "% of AI spend", "…of which training",
-             "Net AI today", "Net AI with Helarctos"]
+    _sub(ws, 23, "BY COMPANY — FY2026, $B", 8)
+    heads = ["Company", "AI spend", "Training saving", "Inference saving", "Helarctos saving / yr",
+             "% of AI spend", "Net AI today", "Net AI with Helarctos"]
     for j, h in enumerate(heads, start=1):
         put(ws, 24, j, h, bold=True, border=True, wrap=True, fill=SUB_FILL)
     ws.row_dimensions[24].height = 30
@@ -2180,14 +2168,15 @@ def build_summary(ws, d26, d25):
         r = 25 + i
         src_r = base + i
         put(ws, r, 1, c["name"] if c else f"TOTAL ({len(COMPANIES)})", border=True, bold=c is None)
-        for j, col, fmt in ((2, "M", FMT_B), (3, "L", FMT_B), (4, "N", FMT_P), (5, "F", FMT_B),
-                            (6, "P", FMT_B), (7, "Q", FMT_B)):
-            put(ws, r, j, f"={VB}!{col}{src_r}", fmt, CALC_FILL, border=True, bold=c is None)
+        for j, cols, fmt in ((2, "M", FMT_B), (3, "FJ", FMT_B), (4, "GK", FMT_B), (5, "L", FMT_B),
+                             (6, "N", FMT_P), (7, "P", FMT_B), (8, "Q", FMT_B)):
+            put(ws, r, j, "=" + "+".join(f"{VB}!{col}{src_r}" for col in cols), fmt, CALC_FILL,
+                border=True, bold=c is None)
 
     r = 25 + len(COMPANIES) + 2
     _sub(ws, r, "WHY THE ANSWER IS ~99% OF THE CHIP BILL — NOT \"1,000×\"", 7)
     _para(ws, r + 1,
-          "Multiples don't multiply. A GPU is bought whole — memory and compute together — so a serving fleet "
+          "Multiples don't multiply. A GPU is bought whole — memory and compute together — so an inference fleet "
           "shrinks by whichever need falls LEAST (here the conservative 100× memory cap), not by 100 × 793. "
           "Cutting a fleet 100× already removes 99% of it; bigger multiples can only move the last 1%. So the "
           "dollars are set by how much these firms spend on chips, not by how large the multiple is. We report "
@@ -2197,7 +2186,7 @@ def build_summary(ws, d26, d25):
     _sub(ws, r, "HOW TO READ THIS WORKBOOK", 7)
     guide = [
         ("Summary", "this page — the headline, where the savings come from, and by company"),
-        ("Value Bridge", "step by step from disclosed capex to the saving; training vs serving; where each lever moves the needle"),
+        ("Value Bridge", "step by step from disclosed capex to the saving; training vs inference; where each lever moves the needle"),
         ("Levers", "the five Helarctos levers in plain English, how sure we are of each, the scenario switch, training shares"),
         (" / ".join(c["name"] for c in COMPANIES), "each company's capex build from its filings (green = disclosed)"),
         ("Technical appendix", "Totals, Inputs, Sensitivity, CostLadder, ServingTraining, Evidence, Methodology — "
@@ -2220,7 +2209,7 @@ def build_summary(ws, d26, d25):
     _color_bars(ch, SOURCE_COLORS)
     ch.y_axis.title = "$B per year"
     ch.height, ch.width = 7, 14
-    ws.add_chart(ch, "I5")
+    ws.add_chart(ch, "J5")
 
 
 def main() -> None:

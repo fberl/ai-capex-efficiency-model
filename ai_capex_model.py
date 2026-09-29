@@ -2072,6 +2072,12 @@ del _k, _quoted, _tol
 # Base = accelerator capex only (dc_scale deliberately ignored here: buildings
 # and power infrastructure are upside, stated on the surfaces).
 VALUE_BRIDGE_CURRICULUM = "modern_standard"
+# Training speed per token at the SAME model size (2026-09-29 user ruling):
+# roughly comparable to a transformer, so no speed credit is taken. The
+# training saving comes only from the smaller equal-quality model trained on
+# fewer tokens (s x s). The curriculum-weighted kernel advantage (x2.2 today,
+# x4.0 at maturity) stays in the technical appendix as background.
+TRAIN_SPEED_SAME_SIZE = 1.0
 
 
 def value_bridge_levers(g=None, kernels="current", n_tf=None):
@@ -2082,13 +2088,12 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
     g = g if g is not None else GLOBALS
     scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
     s = param_matching_gain(scale)
-    k = campaign_landed_train_advantage(VALUE_BRIDGE_CURRICULUM, kernels=kernels,
-                                        quality_matched=False)
+    k = TRAIN_SPEED_SAME_SIZE
     serve_tp = float(g["flop_factor"]) / s
     return {
         "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
         "fewer_tokens": s,            # PROJECTION (compute-optimal scaling, D ~ N)
-        "train_speed": k,             # MEASURED r(T) x ILLUSTRATIVE curriculum mix (current); TARGET (mature)
+        "train_speed": k,             # parity at the same size: no speed credit (user ruling 2026-09-29)
         "memory": float(g["mem_factor"]),   # MEASURED x2,032 at 262k, capped at /100
         "serving_throughput": serve_tp,     # ESTIMATE (decode 2.5 ms x 64 streams) x MEASURED prefill
         "train_lever": s * s * k,
@@ -2110,6 +2115,9 @@ def _bridge_company(comp, g, year, lv, ts):
     capex_avoided = train_saved + serve_saved
     fleet_cut = capex_avoided / accel if accel else 0.0
     opex_saved = base["ai_opex"] * fleet_cut
+    # power scales with the fleet, so it splits exactly by which fleet shrank
+    train_power_saved = base["ai_opex"] * train_saved / accel if accel else 0.0
+    infer_power_saved = opex_saved - train_power_saved
     spend_cut = capex_avoided + opex_saved
     spend = base["ai_capex"] + base["ai_opex"]
     return {
@@ -2120,6 +2128,10 @@ def _bridge_company(comp, g, year, lv, ts):
         "train_saved": train_saved, "serve_saved": serve_saved,
         "capex_avoided": capex_avoided,
         "fleet_cut": fleet_cut, "opex_saved": opex_saved, "spend_cut": spend_cut,
+        # audience view: two buckets, each with its own power folded in
+        "train_power_saved": train_power_saved, "infer_power_saved": infer_power_saved,
+        "training_total": train_saved + train_power_saved,
+        "inference_total": serve_saved + infer_power_saved,
         "net_with": base["net_now"] + spend_cut,
         "pct_cut": spend_cut / spend if spend else 0.0,
         "capitalized": spend_cut / g["discount_rate"],
@@ -2136,7 +2148,8 @@ def value_bridge(g=None, companies=None, year="fy26", levers=None, train_shares=
     rows = [_bridge_company(comp, g, year, lv, shares.get(comp["name"], c["train_share"]))
             for comp in companies]
     keys = ["ai_capex", "accel", "ai_opex", "ai_rev", "net_now", "train_fleet",
-            "serve_fleet", "train_saved", "serve_saved",
+            "serve_fleet", "train_saved", "serve_saved", "train_power_saved", "infer_power_saved",
+            "training_total", "inference_total",
             "capex_avoided", "opex_saved", "spend_cut", "net_with", "capitalized"]
     total = {k: sum(r[k] for r in rows) for k in keys}
     total["name"] = f"TOTAL ({len(rows)})"
@@ -2157,10 +2170,8 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
         ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0)),
         ("Smaller model for the same quality", dict(train_lever=s * s, memory=1.0, serving_compute_lever=s)),
         ("+ Fixed-size memory per conversation", dict(train_lever=s * s, memory=lv["memory"], serving_compute_lever=s)),
-        ("+ Many more conversations per GPU", dict(train_lever=s * s, memory=lv["memory"],
+        ("+ Many more conversations per GPU", dict(train_lever=lv["train_lever"], memory=lv["memory"],
                                                      serving_compute_lever=lv["serving_compute_lever"])),
-        ("+ Faster training on long documents", dict(train_lever=lv["train_lever"], memory=lv["memory"],
-                                                      serving_compute_lever=lv["serving_compute_lever"])),
     ]
     out, prev = [], 0.0
     for label, over in steps:
@@ -2179,6 +2190,8 @@ def _check_value_bridge():
         _, vb = value_bridge(year=yr, train_shares=zero, levers=amdahl)
         _, ref = compute_year(GLOBALS, COMPANIES, yr)
         assert abs(vb["spend_cut"] - ref["spend_cut"]) < 1e-6, (yr, vb["spend_cut"], ref["spend_cut"])
+        _, t = value_bridge(year=yr)
+        assert abs(t["training_total"] + t["inference_total"] - t["spend_cut"]) < 1e-9
         lad = savings_ladder(year=yr)
         assert abs(lad[-1]["spend_cut"] - value_bridge(year=yr)[1]["spend_cut"]) < 1e-9
 

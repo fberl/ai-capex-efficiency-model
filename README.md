@@ -4,9 +4,9 @@ Dollarizes the value of the Helarctos architecture for the six companies spendin
 infrastructure (Microsoft, Alphabet, Amazon, Meta, Oracle, SpaceX), plus a grossed-up global estimate.
 
 **Headline (Today scenario):** the six firms spend ~$779B on AI in FY2026 and earn ~$136B from it.
-Helarctos makes **~$376–380B/yr** of that spend unnecessary for the same AI output (~48% of all AI
-spend, ~99% of the AI-chip bill), shrinking the FY2026 cash burn from ~−$643B to ~−$265B. FY2025:
-~$159–161B/yr. Capitalized at 6%: ~$6.3T (FY2026 run-rate).
+Helarctos makes **~$372–380B/yr** of that spend unnecessary for the same AI output (~48% of all AI
+spend, ~99% of the AI-chip bill), shrinking the FY2026 cash burn from ~−$643B to ~−$270B. FY2025:
+~$157–161B/yr. Capitalized at 6%: ~$6.3T (FY2026 run-rate).
 
 The headline is dollars, not a multiple. A GPU is bought whole, so a fleet shrinks by whichever need
 falls least; once that is ~100×, 99% of the chip bill is already gone and bigger multiples only move
@@ -18,31 +18,34 @@ The workbook and the app both open on three plain-language tabs. The engineering
 them as a technical appendix (Totals, Inputs, Sensitivity, CostLadder, ServingTraining, Evidence,
 Methodology).
 
-- **Summary**: the FY2026 and FY2025 headline, where the saving comes from (training clusters,
-  serving GPUs, power), and a per-company table.
+- **Summary**: the FY2026 and FY2025 headline, where the saving comes from — **Training** (~$135B
+  FY2026) and **Inference** (~$237B), each including the power its GPUs would have drawn — and a
+  per-company table.
 - **Value Bridge**: a step-by-step walk from disclosed capex to the saving. The chip fleet is split
-  into a **training fleet** and a **serving fleet** using per-company training shares (25–55%).
-  - **Training:** a same-quality Helarctos model is ×4.2 smaller, trains on ×4.2 fewer tokens and is
-    ×2.2 cheaper per token on a modern long-context mix — ×40 fewer GPU-hours, so the training cluster
-    can be ×40 smaller. The GPUs it no longer needs are capex avoided (~$135B FY2026).
-  - **Serving:** memory per conversation falls ÷100 (fixed-size state instead of a growing KV cache) and
-    compute per token falls ×793. A GPU is bought whole, so the serving fleet shrinks by the binding
-    limit — ×100 (~$230B FY2026).
+  into a **training fleet** and an **inference fleet** using per-company training shares (25–55%).
+  - **Training:** a same-quality Helarctos model is ×4.2 smaller and trains on ×4.2 fewer tokens, at
+    about the same speed per token (no speed credit taken) — ×18 fewer GPU-hours, so the training
+    cluster can be ×18 smaller. The GPUs it no longer needs are capex avoided, and their power is saved every
+    year (~$135B FY2026, capex + power).
+  - **Inference:** memory per conversation falls ÷100 (fixed-size state instead of a growing KV cache) and
+    compute per token falls ×793. A GPU is bought whole, so the inference fleet shrinks by the binding
+    limit — ×100 (~$237B FY2026, capex + power).
   - A **one-lever-at-a-time ladder** shows where the needle moves (FY2026, Today):
 
     | Step | Spend cut |
     |---|---|
-    | Smaller model for the same quality (training only — serving GPUs stay memory-bound) | ~$135B |
+    | Smaller model for the same quality (training only — inference GPUs stay memory-bound) | ~$135B |
     | + Fixed-size memory per conversation | ~$318B |
     | + Many more conversations per GPU | ~$372B |
-    | + Faster training on long documents | ~$376B |
 
 - **Levers**: the five Helarctos levers in plain English, each with how sure we are of it
   (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks; the
-  Today / Optimized-kernels switch; the per-company training shares.
+  Today / Optimized-kernels switch; the per-company training shares. Training speed per token is
+  treated as comparable to a transformer at the same size (no credit); the speed advantage is in
+  inference, where one GPU serves many long conversations at once.
 
-The bridge takes no memory credit on training and prices serving on whole GPUs. It lands within ~1% of
-the technical Totals tab ($376B vs $380B FY2026), which prices memory (~60% of a GPU's cost) and
+The bridge takes no memory credit on training and prices inference on whole GPUs. It lands within ~1% of
+the technical Totals tab ($372B vs $380B FY2026), which prices memory (~60% of a GPU's cost) and
 compute (~40%) separately. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs;
 an import-time check asserts it reproduces the Totals engine exactly when given the same levers.
 
@@ -88,8 +91,9 @@ the lever and within rounding in dollars. The previous ×9.24 lever (~20× → ~
   (chip) capex → fleet → power/opex → avoided spend → capitalized value. FY2025 actual + FY2026.
 - **Technical engine (Totals, company tabs):** cost-weighted reduction
   `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 154×.
-- **Audience engine (Summary, Value Bridge):** training fleet ÷ GPU-hour lever (×40); serving fleet ÷
-  min(memory lever, compute lever) (×100); power follows the fleet.
+- **Audience engine (Summary, Value Bridge):** training fleet ÷ GPU-hour lever (×18); inference fleet ÷
+  min(memory lever, compute lever) (×100); each fleet's power shrinks with it and is folded into its
+  number.
 - **Net AI economics (cash basis):** `AI revenue − AI capex − AI power`; with the architecture, add the
   spend cut.
 - **Global estimate:** the named firms are grossed up by their assumed share (80%) of worldwide AI capex.

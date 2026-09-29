@@ -48,7 +48,7 @@ from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             headline_with_training, TRAINING_CURRICULA,
                             KV_MB_PER_TOKEN_PER_STREAM,
                             value_bridge, value_bridge_levers, savings_ladder,
-                            VALUE_BRIDGE_CURRICULUM, INFRA_SHARE_BASIS)
+                            INFRA_SHARE_BASIS)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -1009,29 +1009,30 @@ _LEVER_TEXT = [
     ("smaller_model", "1 · Smaller model for the same quality", "PROJECTED", "×",
      "Quality-vs-size trends measured on models we trained (47M–663M parameters), extended to frontier "
      "scale: a Helarctos model matches the transformer with a fraction of the parameters.",
-     "Training and serving compute"),
+     "Training and inference compute"),
     ("fewer_tokens", "2 · Fewer training tokens needed", "PROJECTED", "×",
      "Compute-optimal training scales data with model size, so a smaller model needs fewer tokens.",
      "Training"),
-    ("train_speed", "3 · Faster training per token on long documents", "MEASURED per length · mix illustrative", "×",
-     "A transformer's cost per token rises with document length; ours stays flat. Averaged over a modern "
-     "training mix. On short (2k) documents the transformer is still faster today.",
+    ("train_speed", "3 · Training speed per token (same model size)", "ASSUMPTION — comparable, no credit", "×",
+     "At the same model size Helarctos trains at about the same speed per token as a transformer, so no "
+     "speed-up is counted; the training saving comes from a smaller model on fewer tokens (levers 1, 2). "
+     "Where Helarctos is much faster is inference (lever 5).",
      "Training"),
     ("memory", "4 · Memory per live conversation", "MEASURED (capped)", "÷",
      "A transformer's KV cache grows with every token of every conversation (~197 KB/token); Helarctos "
      "keeps a fixed-size state (~25 MB). ×2,000 measured at 262k — capped at ÷100.",
-     "Serving GPUs (the memory limit)"),
+     "Inference GPUs (the memory limit)"),
     ("serving_throughput", "5 · More conversations served per GPU", "ESTIMATE", "×",
      "Small per-conversation memory lets one GPU hold many long conversations at once; no growing cache "
      "is re-read per token. At a 128k-token average context.",
-     "Serving GPUs (the compute limit)"),
+     "Inference GPUs (the compute limit)"),
 ]
 
 
 # One color per bar (categorical slots 1-4, validated for adjacent-pair CVD
 # separation; two sit below 3:1 on white, so every bar carries its value label).
-SOURCE_COLORS = ["#2a78d6", "#eb6834", "#eda100"]  # training, serving GPUs, power
-LADDER_COLORS = ["#a3a29c", "#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # baseline gray, then one hue per lever step
+SOURCE_COLORS = ["#2a78d6", "#eb6834"]  # training, inference (each incl. its power)
+LADDER_COLORS = ["#a3a29c", "#2a78d6", "#eb6834", "#1baf7a"]  # baseline gray, then one hue per lever step
 
 
 def _colored_bars(labels, values, colors, horizontal=False):
@@ -1078,7 +1079,7 @@ def summary_tab(comps, g):
     spend26 = t26["ai_capex"] + t26["ai_opex"]
     st.markdown(
         f"In FY2026 the six largest AI spenders will spend **{md_usd(spend26)}B** on AI and earn "
-        f"**{md_usd(t26['ai_rev'])}B** from it. Helarctos models do the same AI work — training and serving "
+        f"**{md_usd(t26['ai_rev'])}B** from it. Helarctos models do the same AI work — training and inference "
         f"at the same quality — on a fraction of the hardware. Scenario: **{st.session_state.get('scenario')}** "
         f"(sidebar).")
     k1, k2, k3, k4 = st.columns(4)
@@ -1091,27 +1092,28 @@ def summary_tab(comps, g):
 
     section("Where the savings come from — FY2026, $B per year")
     src = [
-        ("Training clusters", t26["train_saved"],
+        ("Training", t26["training_total"],
          f"Same-quality model {lv['smaller_model']:.1f}× smaller, {lv['fewer_tokens']:.1f}× fewer tokens, "
-         f"{lv['train_speed']:.1f}× faster per token → {lv['train_lever']:.0f}× fewer GPU-hours → smaller training clusters"),
-        ("Serving GPUs", t26["serve_saved"],
+         f"about the same speed per token → {lv['train_lever']:.0f}× fewer GPU-hours → smaller training "
+         f"clusters, and the power they would draw"),
+        ("Inference", t26["inference_total"],
          f"Fixed-size state (÷{lv['memory']:.0f} memory) and {lv['serving_compute_lever']:.0f}× less compute "
          f"per token; a GPU is bought whole, so the fleet shrinks by the binding limit → "
-         f"{lv['serving_gpu_lever']:.0f}× fewer serving GPUs"),
-        ("Power & operations", t26["opex_saved"], "Fewer chips draw less power and cooling"),
+         f"{lv['serving_gpu_lever']:.0f}× fewer inference GPUs, and their power"),
     ]
-    show_table(["Source", "$B / yr", "share", "How Helarctos does it"],
+    show_table(["Where", "$B / yr (capex + power)", "share", "How Helarctos does it"],
                [[(a, ""), (n1(v), "b"), (pct(v / t26["spend_cut"]), "b"), (h, "")] for a, v, h in src]
                + [[("TOTAL", "s"), (n1(t26["spend_cut"]), "s"), ("100%", "s"), ("", "s")]])
     _colored_bars([a for a, _, _ in src], [v for _, v, _ in src], SOURCE_COLORS, horizontal=True)
 
     section("By company — FY2026, $B")
-    show_table(["Company", "AI spend", "Helarctos saving / yr", "% of AI spend", "…of which training",
-                "Net AI today", "Net AI with Helarctos"],
+    show_table(["Company", "AI spend", "Training saving", "Inference saving", "Helarctos saving / yr",
+                "% of AI spend", "Net AI today", "Net AI with Helarctos"],
                [[(r["name"], "s" if r is t26 else ""), (n0(r["ai_capex"] + r["ai_opex"]), "b"),
-                 (n1(r["spend_cut"]), "b"), (pct(r["pct_cut"]), "b"), (n1(r["train_saved"]), "b"),
+                 (n1(r["training_total"]), "b"), (n1(r["inference_total"]), "b"),
+                 (n1(r["spend_cut"]), "b"), (pct(r["pct_cut"]), "b"),
                  (n0(r["net_now"]), "b"), (n0(r["net_with"]), "b")] for r in rows26 + [t26]])
-    st.caption("Why ~99% of the chip bill and not '1,000×': a GPU is bought whole, so a serving fleet shrinks "
+    st.caption("Why ~99% of the chip bill and not '1,000×': a GPU is bought whole, so an inference fleet shrinks "
                "by whichever need falls least (the 100× memory cap), not by 100 × 793. Cutting a fleet 100× "
                "already removes 99% of it — bigger multiples only move the last 1%. Only chips and their power are counted; "
                "buildings and power infrastructure are upside.")
@@ -1131,37 +1133,40 @@ def value_bridge_tab(comps, g):
     section("Step 2 — Split the chip fleet by what it does")
     show_table(["Fleet", "$B", "share"], [
         [("Training fleet — builds new models", ""), (n0(t["train_fleet"]), "b"), (pct(t["train_share"]), "y")],
-        [("Serving fleet — answers users", ""), (n0(t["serve_fleet"]), "b"), (pct(1 - t["train_share"]), "b")],
+        [("Inference fleet — answers users", ""), (n0(t["serve_fleet"]), "b"), (pct(1 - t["train_share"]), "b")],
     ])
-    section("Step 3 — Training: fewer GPU-hours per model → smaller training clusters → capex avoided")
+    section("Step 3 — Training: fewer GPU-hours per model → smaller training clusters")
     show_table(["Item", "value"], [
         [("Training fleet capex today", ""), (n0(t["train_fleet"]), "b")],
         [("× smaller model for the same quality", ""), (x1(lv["smaller_model"]), "b")],
         [("× fewer training tokens", ""), (x1(lv["fewer_tokens"]), "b")],
-        [("× faster per token on long documents", ""), (x1(lv["train_speed"]), "y")],
+        [("× training speed per token (about the same)", ""), (x1(lv["train_speed"]), "y")],
         [("= GPU-hours per training run fall by", "s"), (f"{lv['train_lever']:.1f}×", "s")],
         [("Training fleet needed with Helarctos", ""), (n1(t["train_fleet"] / lv["train_lever"]), "b")],
-        [("TRAINING CAPEX AVOIDED", "s"), (n0(t["train_saved"]), "s")],
+        [("Training capex avoided", ""), (n1(t["train_saved"]), "b")],
+        [("+ power & operations those GPUs would have drawn", ""), (n1(t["train_power_saved"]), "b")],
+        [("TRAINING SAVING (capex + power)", "s"), (n1(t["training_total"]), "s")],
     ])
     st.caption("Labs size training clusters to the GPU-hours their runs need; the same training programme on "
                f"{lv['train_lever']:.0f}× fewer GPU-hours runs on a cluster that much smaller — the GPUs never "
                "bought are capex avoided. No memory credit is taken on training.")
-    section("Step 4 — Serving: less memory and more conversations per GPU → fewer serving GPUs")
+    section("Step 4 — Inference: less memory and more conversations per GPU → fewer inference GPUs")
     show_table(["Item", "value"], [
-        [("Serving fleet capex today", ""), (n0(t["serve_fleet"]), "b")],
+        [("Inference fleet capex today", ""), (n0(t["serve_fleet"]), "b")],
         [("Memory needed per conversation falls by", ""), (f"÷{lv['memory']:.0f}", "b")],
         [("Compute needed per token falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b")],
         [("= GPUs needed fall by (whichever limit binds)", "s"), (f"{lv['serving_gpu_lever']:.0f}×", "s")],
-        [("Serving fleet needed with Helarctos", ""), (n1(t["serve_fleet"] / lv["serving_gpu_lever"]), "b")],
-        [("SERVING CAPEX AVOIDED", "s"), (n0(t["serve_saved"]), "s")],
+        [("Inference fleet needed with Helarctos", ""), (n1(t["serve_fleet"] / lv["serving_gpu_lever"]), "b")],
+        [("Inference capex avoided", ""), (n1(t["serve_saved"]), "b")],
+        [("+ power & operations those GPUs would have drawn", ""), (n1(t["infer_power_saved"]), "b")],
+        [("INFERENCE SAVING (capex + power)", "s"), (n1(t["inference_total"]), "s")],
     ])
     st.caption("A GPU brings memory and compute together, so the fleet must cover whichever runs out first. "
                "At long context a transformer runs out of memory (its growing KV cache) first.")
     section("Result — FY2026")
     show_table(["Item", "$B"], [
-        [("Training capex avoided", ""), (n1(t["train_saved"]), "b")],
-        [("Serving capex avoided", ""), (n1(t["serve_saved"]), "b")],
-        [("Power & operations saved", ""), (n1(t["opex_saved"]), "b")],
+        [("Training (capex + power)", ""), (n1(t["training_total"]), "b")],
+        [("Inference (capex + power)", ""), (n1(t["inference_total"]), "b")],
         [("SPEND HELARCTOS MAKES UNNECESSARY / yr", "s"), (n1(t["spend_cut"]), "s")],
         [("…as a share of all AI spend", ""), (pct(t["pct_cut"]), "b")],
         [("Net AI cash result with Helarctos", ""), (n0(t["net_with"]), "b")],
@@ -1169,7 +1174,7 @@ def value_bridge_tab(comps, g):
     ])
     section("Where the needle moves — switch the levers on one at a time (FY2026)")
     lad = savings_ladder(g, comps, "fy26", lv, ts)
-    show_table(["Step", "Training GPU-hours ÷", "Serving memory ÷", "Serving compute ÷", "Chip fleet cut",
+    show_table(["Step", "Training GPU-hours ÷", "Inference memory ÷", "Inference compute ÷", "Chip fleet cut",
                 "Spend cut $B/yr", "Added by this step"],
                [[(s_["step"], ""), (x1(s_["train_lever"]), "b"), (f"{s_['memory']:.0f}", "b"),
                  (x1(s_["serving_compute_lever"]), "b"), (f"{s_['fleet_cut']:.1%}", "b"),
@@ -1178,12 +1183,12 @@ def value_bridge_tab(comps, g):
     _colored_bars([f"{i}. {s_['step']}" for i, s_ in enumerate(lad)], [s_["spend_cut"] for s_ in lad],
                   LADDER_COLORS, horizontal=True)
     st.caption("The smaller model alone removes nearly all of training (fewer parameters and fewer tokens "
-               "compound) but no serving GPUs — at long context they are full of memory, not busy computing. "
-               "Fixed-size memory unlocks serving until compute binds; more conversations per GPU lifts that. "
+               "compound) but no inference GPUs — at long context they are full of memory, not busy computing. "
+               "Fixed-size memory unlocks inference until compute binds; more conversations per GPU lifts that. "
                "Later levers have big multiples but add little: a cost can only fall to zero once. The order is "
                "the storyline; the end point doesn't depend on it.")
     _, tt = compute_year(g, comps, "fy26")
-    st.caption(f"Cross-check: the technical Totals tab prices the whole fleet on the serving levers — "
+    st.caption(f"Cross-check: the technical Totals tab prices memory and compute separately — "
                f"{md_usd(tt['spend_cut'])}B FY26 vs {md_usd(t['spend_cut'])}B here.")
 
 
@@ -1198,9 +1203,9 @@ def levers_tab(g):
     section("How they combine")
     show_table(["Fleet lever", "Value", "Built from"], [
         [("Training: GPU-hours per run fall by", ""), (f"{lv['train_lever']:.1f}×", "b"), ("levers 1 × 2 × 3", "")],
-        [("Serving: memory falls by", ""), (f"÷{lv['memory']:.0f}", "b"), ("lever 4", "")],
-        [("Serving: compute falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b"), ("levers 1 × 5", "")],
-        [("Serving: GPUs needed fall by", "s"), (f"{lv['serving_gpu_lever']:.0f}×", "s"),
+        [("Inference: memory falls by", ""), (f"÷{lv['memory']:.0f}", "b"), ("lever 4", "")],
+        [("Inference: compute falls by", ""), (f"{lv['serving_compute_lever']:.0f}×", "b"), ("levers 1 × 5", "")],
+        [("Inference: GPUs needed fall by", "s"), (f"{lv['serving_gpu_lever']:.0f}×", "s"),
          ("the smaller of the two — a GPU is bought whole, so the binding limit sets the fleet", "")],
         [("For reference: technical tabs' blended cut", ""),
          (x1(1 / (lv["mem_share"] / lv["memory"] + (1 - lv["mem_share"]) / lv["serving_compute_lever"])), "b"),
@@ -1213,8 +1218,7 @@ def levers_tab(g):
     for col, c in zip(cols, COMPANIES):
         col.number_input(c["name"], min_value=0.0, max_value=1.0, step=0.05, format="%.2f",
                          key=f"ts_{c['name']}")
-    st.caption(f"Training curriculum behind lever 3: {TRAINING_CURRICULA[VALUE_BRIDGE_CURRICULUM]['label']} "
-               "(illustrative). Only chips and their power are counted; no memory credit on training.")
+    st.caption("Only chips and their power are counted; no memory or speed credit is taken on training.")
 
 
 # ---- main ----------------------------------------------------------------------
