@@ -2275,7 +2275,8 @@ WHY_IT_MATTERS = {
     "Memory per conversation": "Measured ×2,032 at 262k on our test model. Caveat: for frontier-size models with "
         "grouped-query attention the frontier-geometry estimate is ~÷208, where memory would bind again (≈ −$0.5B).",
     "Average conversation length": "Shorter conversations shrink both the memory advantage and tokens per GPU "
-        "(×48 at 32k). The workbook is fixed at 262k; the app's sidebar lets you change it.",
+        "(×48 at 32k); longer ones grow them (×1,411 tokens per GPU at 1M, where one transformer conversation no "
+        "longer fits a GPU). The workbook is fixed at 262k; the app's sidebar lets you change it.",
     "Data-center share of capex": "Share of capex that goes into data centres rather than offices and other "
         "assets. From 10-K/10-Q property notes (93–98%; Amazon's AWS share 68–76%).",
     "Training speed per token": "Set to ×1 (about the same). Small effect: the smaller model already removes "

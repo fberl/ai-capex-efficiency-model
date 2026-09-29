@@ -1420,7 +1420,8 @@ WM_WHY = {
     "Memory per conversation": "Measured ×2,032 at 262k on our test model. Frontier-size models with grouped-query "
         "attention: ~÷208 (estimate), where memory would bind again (≈ −$0.5B).",
     "Average conversation length": "Shorter conversations shrink both the memory advantage and tokens per GPU "
-        "(×48 at 32k). Set it in the sidebar.",
+        "(×48 at 32k); longer ones grow them (×1,411 tokens per GPU at 1M, where one transformer conversation no "
+        "longer fits a GPU). Set it in the sidebar.",
     "Data-center share of capex": "Share of capex that goes into data centres (10-K/10-Q property notes, 93–98%; "
         "Amazon's AWS share 68–76%).",
     "Training speed per token": "Set to ×1. Small effect: the smaller model already removes ~94% of training "

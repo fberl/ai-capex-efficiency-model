@@ -2331,8 +2331,11 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
          run(over={"serving_compute_lever": _tp(h6=2.6)}), "×12", run(over={"serving_compute_lever": _tp(h6=12.0)})),
         ("Memory per conversation", "Inputs B2", "H4", "÷208 (frontier-model geometry)",
          run(over={"memory": fleet_memory_lever(262144)}), "÷8,000", run(over={"memory": 8000.0})),
+        # 1M: a transformer conversation's KV (~207 GB) no longer fits one GPU; the
+        # 1/context law still credits it one stream per GPU (sharding cost ignored),
+        # so this high case is conservative.
         ("Average conversation length", "262k default (app: sidebar)", "", "32k",
-         run(over=_ctx_over(32768)), "262k (default)", run()),
+         run(over=_ctx_over(32768)), "1M", run(over=_ctx_over(1048576))),
         ("Data-center share of capex", "company tabs, row 4", "", "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
         ("Training speed per token", "Levers D11/E11", "H3", "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
         ("Electricity rate", "Inputs B9", "", "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),

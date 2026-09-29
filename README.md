@@ -77,7 +77,7 @@ Methodology).
   **Helarctos levers** and **market & company data**, with a tornado chart (teal = Helarctos lever,
   gray = market data). The chip-share inputs (server and accelerator shares, ±15% → ±$50–57B) move the
   answer more than any Helarctos lever. Only H1 (with H2) swings it by $10B or more; H4, H5 and H6 each
-  move it by under $2B across their ranges, and a 32k-token average conversation costs ~$4B.
+  move it by under $2B across their ranges, and the average conversation length moves it from ~−$4B (32k) to ~+$0.5B (1M).
 
 **Cell markers** (workbook and app): **teal + H1–H6** = a Helarctos lever; **★ with an orange
 border** = a high-impact input (swings FY2026 by $10B or more); **◆ with a purple fill** = one of the
