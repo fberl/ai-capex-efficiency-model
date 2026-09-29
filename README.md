@@ -3,65 +3,78 @@
 Dollarizes the value of the Helarctos architecture for the six companies spending the most on AI
 infrastructure (Microsoft, Alphabet, Amazon, Meta, Oracle, SpaceX), plus a grossed-up global estimate.
 
-**Headline (Today scenario):** the six firms spend ~$779B on AI in FY2026 and earn ~$136B from it.
-Helarctos makes **~$372–380B/yr** of that spend unnecessary for the same AI output (~48% of all AI
-spend, ~99% of the AI-chip bill), shrinking the FY2026 cash burn from ~−$643B to ~−$270B. FY2025:
-~$157–161B/yr. Capitalized at 6%: ~$6.3T (FY2026 run-rate).
+**Headline (Current kernels, 262k-token average conversation):** the six firms spend ~$782B on AI in
+FY2026 and earn ~$136B from it. Helarctos makes **~$375–383B/yr** of that spend unnecessary for the
+same AI output (~48% of all AI spend, ~99% of the AI-chip bill), shrinking the FY2026 cash burn from
+~−$646B to ~−$270B. FY2025: ~$158–162B/yr. Capitalized at 6%: ~$6.4T (FY2026 run-rate).
 
 The headline is dollars, not a multiple. A GPU is bought whole, so a fleet shrinks by whichever need
 falls least; once that is ~100×, 99% of the chip bill is already gone and bigger multiples only move
 the last 1%. The dollars are set by how much these firms spend on chips.
 
-## Start here: Summary, Value Bridge, Levers
+## Start here: Summary, Value Bridge, Levers, What Matters
 
-The workbook and the app both open on three plain-language tabs. The engineering ledger sits behind
+The workbook and the app both open on four plain-language tabs. The engineering ledger sits behind
 them as a technical appendix (Totals, Inputs, Sensitivity, CostLadder, ServingTraining, Evidence,
 Methodology).
 
-- **Summary**: the FY2026 and FY2025 headline, where the saving comes from — **Training** (~$135B
-  FY2026) and **Inference** (~$237B), each including the power its GPUs would have drawn — and a
+- **Summary**: the FY2026 and FY2025 headline, where the saving comes from — **Training** (~$136B
+  FY2026) and **Inference** (~$239B), each including the power its GPUs would have drawn — and a
   per-company table.
 - **Value Bridge**: a step-by-step walk from disclosed capex to the saving. The chip fleet is split
   into a **training fleet** and an **inference fleet** using per-company training shares (25–55%).
   - **Training:** a same-quality Helarctos model is ×4.2 smaller and trains on ×4.2 fewer tokens, at
     about the same speed per token (no speed credit taken) — ×18 fewer GPU-hours, so the training
     cluster can be ×18 smaller. The GPUs it no longer needs are capex avoided, and their power is saved every
-    year (~$135B FY2026, capex + power).
+    year (~$136B FY2026, capex + power).
   - **Inference:** memory per conversation falls ÷100 (fixed-size state instead of a growing KV cache) and
-    compute per token falls ×793. A GPU is bought whole, so the inference fleet shrinks by the binding
-    limit — ×100 (~$237B FY2026, capex + power).
-  - A **one-lever-at-a-time ladder** shows where the needle moves (FY2026, Today):
+    compute per token falls ×1,553. A GPU is bought whole, so the inference fleet shrinks by the binding
+    limit — ×100 (~$239B FY2026, capex + power).
+  - A **one-lever-at-a-time ladder** shows where the needle moves (FY2026):
 
     | Step | Spend cut |
     |---|---|
-    | Smaller model for the same quality (training only — inference GPUs stay memory-bound) | ~$135B |
-    | + Fixed-size memory per conversation | ~$318B |
-    | + Many more conversations per GPU | ~$372B |
+    | Smaller model for the same quality (training only — inference GPUs stay memory-bound) | ~$136B |
+    | + Fixed-size memory per conversation | ~$320B |
+    | + Many more conversations per GPU | ~$375B |
 
 - **Levers**: the five Helarctos levers in plain English, each with how sure we are of it
   (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks; the
-  Today / Optimized-kernels switch; the per-company training shares. Training speed per token is
-  treated as comparable to a transformer at the same size (no credit); the speed advantage is in
-  inference, where one GPU serves many long conversations at once.
+  scenario picker; the per-company training shares. Training speed per token is treated as
+  comparable to a transformer at the same size (no credit); the speed advantage is in inference,
+  where one GPU serves many long conversations at once.
+- **What Matters**: each input moved to a plausible low and high value, one at a time, and what it
+  does to the FY2026 saving. The chip-share inputs (server and accelerator shares, ±15% → ±$50–56B)
+  and three Helarctos levers (smaller model, conversations per GPU, memory — each only if it falls
+  far below today's value) are the ones that matter. Memory share of GPU cost has no effect on the
+  front tabs.
+
+**Cell markers** (workbook and app): **★ with an orange border** = a high-impact input (swings FY2026
+by $10B or more); **◆ with a purple fill** = one of the only values that differ between the two
+scenarios.
 
 The bridge takes no memory credit on training and prices inference on whole GPUs. It lands within ~1% of
-the technical Totals tab ($372B vs $380B FY2026), which prices memory (~60% of a GPU's cost) and
+the technical Totals tab ($375B vs $383B FY2026), which prices memory (~60% of a GPU's cost) and
 compute (~40%) separately. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs;
 an import-time check asserts it reproduces the Totals engine exactly when given the same levers.
 
 ## Scenarios
 
-| Scenario | FLOPs lever | Cost-weighted (technical tabs) | FY2025 cut | FY2026 cut | Basis |
-|---|---|---|---|---|---|
-| **Today** (default in the workbook) | ×793 | ~154× | ~$161B | ~$380B | banked kernel results + aggregate-decode ESTIMATE |
-| Ceiling: optimized kernels (default in the app) | ×816 | ~154× | ~$161B | ~$380B | same, with the funded kernel campaign landed (TARGET) |
+Two scenarios, picked on the Levers tab (workbook) or in the sidebar (app). **Only the ◆ cells differ**
+between them; every other input is shared.
 
-Both scenarios use memory ÷100. The FLOPs lever is the full-workload serving lever at a 128k-token
-average context (decode 2.5 ms/token × 64 resident streams per GPU — an ESTIMATE awaiting its
-aggregate-decode measurement; prefill at the banked ×3.94 Today, ×7.03 at the Ceiling) times the
-×4.22 equal-quality parameter ratio at trillion-parameter scale (PROJECTED). The two differ ~3% in
-the lever and within rounding in dollars. The previous ×9.24 lever (~20× → ~$159B) was retired on
-2026-09-01 because the kernels it was measured on no longer exist.
+| ◆ Input | Current kernels (default) | Optimized kernels |
+|---|---|---|
+| Inference throughput per GPU, same model size (lever 5; Inputs B24/B25) | ×368 | ×382 |
+| Training speed per token, same model size (lever 3; Levers D9/E9) | ×1 | ×1 (no credit yet) |
+| → Compute (FLOPs) lever = ×4.22 equal-quality ratio × throughput | ×1,553 | ×1,611 |
+
+Both are quoted at a 262k-token average conversation. Current kernels = the banked kernel results
+(prefill ×3.94) plus the aggregate-decode ESTIMATE (2.5 ms/token × 64 resident streams per GPU,
+measurement pending); Optimized kernels = the funded kernel programme lands (prefill ×7.03, TARGET).
+At 262k the dollars are within rounding of each other (FY2026 ~$375B front tabs / ~$383B Totals in
+both), because inference GPUs are limited by memory (÷100), not compute. The scenario would matter
+if the optimized kernels also sped up training — enter that under lever 3.
 
 ## Where the numbers come from
 
@@ -81,7 +94,13 @@ the lever and within rounding in dollars. The previous ×9.24 lever (~20× → ~
   | SpaceX | 100% | 100% | AI-segment capex reported directly (S-1, 10-Q) |
 
 - **Server and accelerator shares:** CFO commentary and BOM teardowns (±15–20%); the filings' server
-  share of additions (Microsoft 45% → 62%, Alphabet ~60%) are consistent with the model.
+  share of additions (Microsoft 45% → 62%, Alphabet ~60%) are consistent with the model. A GB200 NVL72
+  rack (~$3M) is ~75–80% GPUs, consistent with the 67–79% accelerator shares.
+- **Power per GPU:** 2.3 kW including cooling (GB200 NVL72 racks draw 120–132 kW for 72 GPUs, ×1.3
+  PUE); corrected from 1.8 kW on 2026-09-29. Electricity $0.08/kWh (US industrial).
+- **Memory share of GPU cost (60%):** consistent with chip teardowns (HBM ~48% + packaging ~16% of a
+  B200's manufacturing cost). It only matters on the technical tabs (<$1B); the front tabs price whole
+  GPUs, which is how they are bought.
 - **Levers:** internal measurements and fits, each labelled MEASURED / PROJECTED / ESTIMATE / TARGET on
   the Levers and ServingTraining tabs.
 

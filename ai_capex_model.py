@@ -137,12 +137,12 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 793.21,  # FLOPs reduction (x) — the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
+    "flop_factor": 1552.72,  # FLOPs reduction (x) — SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
     "gpu_cost": 50000,  # fully-loaded $ per GPU
-    "wall_power_kw": 1.8,  # wall power per GPU (incl PUE + node overhead)
+    "wall_power_kw": 2.3,  # wall power per GPU incl. PUE (2026-09-29: GB200 NVL72 racks draw 120-132 kW / 72 GPUs = 1.7-1.8 kW IT per GPU incl. CPUs and switches, x PUE ~1.3 -> ~2.3 kW; was 1.8)
     "elec_rate": 0.08,  # $/kWh
     "cooling_overhead": 0.25,  # non-power running cost as fraction of electricity
     "fleet_life_yr": 4,  # AI-GPU depreciation life
@@ -1447,7 +1447,7 @@ CAMPAIGN_LANDED_20260831 = {
     # The measured Today family keeps the 64k WORKLOAD default (its receipt
     # basis); the landed scenario prices the fleet where agentic/long-RL usage
     # is heading -- 128k is the realistic middle (256k overshoots today's mean).
-    "context_tokens": 131072,
+    "context_tokens": 262144,  # 2026-09-29 user ruling: E[context] 262k (was 131,072)
     # Prefill at maturity: our prefill arm speeds up by the SAME campaign factor
     # the ceiling uses (realized x3.94 MEASURED on our arm x x1.786 TARGET to the
     # 8k gate = x7.03, CEILING_PREFILL_SPEEDUP). Applied to our measured
@@ -1987,10 +1987,8 @@ def headline_family(g=None, companies=None):
     companies = companies if companies is not None else COMPANIES
     # Ceiling = the campaign-landed maturity lever (2026-09-01 re-base; the
     # prefill-only CEILING_FLOP_LEVER is retired from the headline family).
-    gc = dict(g, flop_factor=CAMPAIGN_LANDED_FLOP_LEVER)
     _, t25 = compute_year(g, companies, "fy25")
     _, t26 = compute_year(g, companies, "fy26")
-    _, c25 = compute_year(gc, companies, "fy25")
     return {
         "fy25_spend_cut": t25["spend_cut"],
         "fy25_capitalized": t25["capitalized"],
@@ -2000,10 +1998,7 @@ def headline_family(g=None, companies=None):
         "fy26_capitalized": t26["capitalized"],
         "global_fy25_capitalized": global_estimate(t25, g)["capitalized"],
         "global_fy26_capitalized": global_estimate(t26, g)["capitalized"],
-        "fy25_ceiling_spend_cut": c25["spend_cut"],
         "today_reduction": reduction_factor(g),
-        "ceiling_reduction": reduction_factor(gc),
-        "ceiling_dollar_gap_pct": 100.0 * (c25["spend_cut"] / t25["spend_cut"] - 1.0),
     }
 
 
@@ -2017,18 +2012,18 @@ def headline_family(g=None, companies=None):
 # Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
 # (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
 HEADLINE_QUOTED_20260929 = (
-    ("fy25_spend_cut", 160.5, 0.5),          # "~$161B/yr"
-    ("fy25_capitalized", 2676.0, 50.0),      # "~$2.7T capitalized at 6%"
-    ("fy25_pct_cut", 0.444, 0.005),          # "~44% of AI spend cut"
+    # RE-QUOTED 2026-09-29 (2): single scenario at E[context] 262k (lever
+    # x1,553) and wall power 2.3 kW/GPU. Ceiling entries removed with the
+    # Today/Ceiling pair.
+    ("fy25_spend_cut", 162.0, 0.5),          # "~$162B/yr"
+    ("fy25_capitalized", 2699.0, 50.0),      # "~$2.7T capitalized at 6%"
+    ("fy25_pct_cut", 0.446, 0.005),          # "~45% of AI spend cut"
     ("fy25_net_arch", -122.0, 1.0),          # "burn shrinks to ~ -$122B/yr"
-    ("fy26_spend_cut", 380.0, 0.5),          # "FY26 r/r ~$380B/yr"
-    ("fy26_capitalized", 6331.0, 50.0),      # "~$6.3T"
-    ("global_fy25_capitalized", 3345.0, 50.0),   # "global est ~$3.3T FY25"
-    ("global_fy26_capitalized", 7914.0, 50.0),   # "~$7.9T FY26"
-    ("fy25_ceiling_spend_cut", 160.5, 0.5),  # Ceiling within rounding of Today (saturation)
-    ("today_reduction", 153.7, 0.5),         # "~x154 cost-weighted, memory-floored"
-    ("ceiling_reduction", 154.1, 0.5),       # "~x154"
-    ("ceiling_dollar_gap_pct", 0.0, 0.25),   # "within rounding in dollars"
+    ("fy26_spend_cut", 383.2, 0.5),          # "FY26 ~$383B/yr"
+    ("fy26_capitalized", 6386.0, 50.0),      # "~$6.4T"
+    ("global_fy25_capitalized", 3374.0, 50.0),   # "global est ~$3.4T FY25"
+    ("global_fy26_capitalized", 7983.0, 50.0),   # "~$8.0T FY26"
+    ("today_reduction", 159.8, 0.5),         # "~x160 cost-weighted, memory-floored"
 )
 
 _HEADLINE = headline_family()
@@ -2078,6 +2073,10 @@ VALUE_BRIDGE_CURRICULUM = "modern_standard"
 # fewer tokens (s x s). The curriculum-weighted kernel advantage (x2.2 today,
 # x4.0 at maturity) stays in the technical appendix as background.
 TRAIN_SPEED_SAME_SIZE = 1.0
+# Per-scenario training speed (2026-09-29: two scenarios kept, cells that
+# differ are marked on every surface). Both at parity until the kernel
+# programme gives a reason to credit a training speed-up.
+TRAIN_SPEED_BY_SCENARIO = {"current": TRAIN_SPEED_SAME_SIZE, "mature": TRAIN_SPEED_SAME_SIZE}
 
 
 def value_bridge_levers(g=None, kernels="current", n_tf=None):
@@ -2088,7 +2087,7 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
     g = g if g is not None else GLOBALS
     scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
     s = param_matching_gain(scale)
-    k = TRAIN_SPEED_SAME_SIZE
+    k = TRAIN_SPEED_BY_SCENARIO.get(kernels, TRAIN_SPEED_SAME_SIZE)
     serve_tp = float(g["flop_factor"]) / s
     return {
         "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
@@ -2181,6 +2180,54 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
                     "increment": t["spend_cut"] - prev, **over})
         prev = t["spend_cut"]
     return out
+
+
+def sensitivity_table(g=None, companies=None, year="fy26"):
+    """What moves the answer: FY-`year` value-bridge spend cut when ONE input is
+    set to a plausible low / high value, everything else at defaults. Each row:
+    (input, where to edit it, helarctos_lever?, low label, delta_low, high label,
+    delta_high), sorted by the larger swing. $B."""
+    import copy
+    g = g if g is not None else GLOBALS
+    companies = companies if companies is not None else COMPANIES
+
+    def run(gg=None, comps=None, over=None, shares=None):
+        gg = gg or g
+        lv = value_bridge_levers(gg)
+        if over:
+            lv.update(over)
+        lv["train_lever"] = lv["smaller_model"] * lv["fewer_tokens"] * lv["train_speed"]
+        lv["serving_gpu_lever"] = min(lv["memory"], lv["serving_compute_lever"])
+        return value_bridge(gg, comps or companies, year, lv, shares)[1]["spend_cut"]
+
+    def scaled(i, f):
+        cs = copy.deepcopy(companies)
+        for c in cs:
+            for y in ("fy25", "fy26", "fy27"):
+                v = list(c[y]); v[i] = min(1.0, v[i] * f); c[y] = tuple(v)
+        return cs
+
+    base = run()
+    lv0 = value_bridge_levers(g)
+    s0, tp0 = lv0["smaller_model"], lv0["serving_throughput"]
+    rows = [
+        ("Server share of AI capex", "company tabs, row 5", False, "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
+        ("Accelerator share of servers", "company tabs, row 6", False, "−15%", run(comps=scaled(3, 0.85)), "+15%", run(comps=scaled(3, 1.15))),
+        ("Smaller model for the same quality", "Inputs B23 (lever 1)", True, "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0, "serving_compute_lever": 2.0 * tp0}),
+         "×6.4", run(over={"smaller_model": 6.44, "fewer_tokens": 6.44, "serving_compute_lever": 6.44 * tp0})),
+        ("Conversations served per GPU", "Inputs B24/B25 (lever 5)", True, "×2", run(over={"serving_compute_lever": 2.0 * s0}),
+         "×3,000", run(over={"serving_compute_lever": 3000.0 * s0})),
+        ("Memory per conversation", "Inputs B2 (lever 4)", True, "÷10", run(over={"memory": 10.0}), "÷1,000", run(over={"memory": 1000.0})),
+        ("Data-center share of capex", "company tabs, row 4", False, "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
+        ("Training speed per token", "Levers D9/E9 (lever 3)", True, "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
+        ("Electricity rate", "Inputs B9", False, "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
+        ("Wall power per GPU", "Inputs B8", False, "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
+        ("Training share of the chip fleet", "Levers C22:C27", False, "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
+         "all 60%", run(shares={c["name"]: 0.6 for c in companies})),
+        ("Memory share of GPU cost", "Inputs B4", False, "40%", run(gg=dict(g, mem_share=0.4)), "80%", run(gg=dict(g, mem_share=0.8))),
+    ]
+    out = [(n, w, h, lo_l, lo - base, hi_l, hi - base) for n, w, h, lo_l, lo, hi_l, hi in rows]
+    return sorted(out, key=lambda r: -max(abs(r[4]), abs(r[6])))
 
 
 def _check_value_bridge():
