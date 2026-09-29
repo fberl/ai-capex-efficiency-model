@@ -4,18 +4,19 @@ Dollarizes the value of the Helarctos architecture for the six companies spendin
 infrastructure (Microsoft, Alphabet, Amazon, Meta, Oracle, SpaceX), plus a grossed-up global estimate.
 
 **Headline (Current kernels, 262k-token average conversation):** the six firms spend ~$782B on AI in
-FY2026 and earn ~$136B from it. Helarctos makes **~$375–383B/yr** of that spend unnecessary for the
-same AI output (~48% of all AI spend, ~99% of the AI-chip bill), shrinking the FY2026 cash burn from
-~−$646B to ~−$270B. FY2025: ~$158–162B/yr. Capitalized at 6%: ~$6.4T (FY2026 run-rate).
+FY2026 and earn ~$136B from it. Helarctos makes **~$377–385B/yr** of that spend unnecessary for the
+same AI output (~48% of all AI spend, over 99% of the AI-chip bill), shrinking the FY2026 cash burn from
+~−$646B to ~−$269B. FY2025: ~$159–163B/yr. Capitalized at 6%: ~$6.3–6.4T (FY2026 run-rate).
 
 The headline is dollars, not a multiple. A GPU is bought whole, so a fleet shrinks by whichever need
-falls least; once that is ~100×, 99% of the chip bill is already gone and bigger multiples only move
-the last 1%. The dollars are set by how much these firms spend on chips.
+falls least; once that is a few hundred ×, over 99% of the chip bill is already gone and bigger
+multiples only move the last fraction of a percent. The dollars are set by how much these firms spend
+on chips.
 
-## The five Helarctos levers (H1–H5)
+## The six Helarctos levers (H1–H6)
 
-Only five inputs are about the Helarctos architecture. Every surface (workbook and app) labels them
-**H1–H5** on a **teal** background; everything else — capex, data-centre / server / accelerator /
+Only six inputs are about the Helarctos architecture. Every surface (workbook and app) labels them
+**H1–H6** on a **teal** background; everything else — capex, data-centre / server / accelerator /
 training shares, $ per GPU, power, electricity, discount rate — is market, company or modelling data.
 
 | Lever | Value | Shrinks | How sure |
@@ -23,12 +24,26 @@ training shares, $ per GPU, power, electricity, discount rate — is market, com
 | **H1** Smaller model for the same quality ★ | ×4.22 (Inputs B23) | Training | PROJECTED |
 | **H2** Fewer training tokens | ×4.22 (= H1) | Training | PROJECTED |
 | **H3** Training speed per token, same size ◆ | ×1 (Levers D11/E11) | Training | ASSUMPTION (no credit) |
-| **H4** Memory per live conversation ★ | ÷100 (Inputs B2) | Inference GPUs | MEASURED ×2,000, capped |
-| **H5** Conversations served per GPU ◆★ | ×368 / ×382 (Inputs B24/B25) | Inference GPUs | ESTIMATE |
+| **H4** Memory per live conversation | ÷2,032 (Inputs B2) | Inference GPUs | MEASURED at 262k on our test model |
+| **H5** More conversations per GPU | ×64 (Inputs B28) | Inference GPUs | MEASURED (64 vs 1; a 2nd transformer stream OOMs) |
+| **H6** Faster decode per token | ×6.25 (Inputs B29) | Inference GPUs | ESTIMATE (15.6 vs 2.5 ms; ×2.6 measured on older kernels) |
 
-Training GPU-hours fall by H1 × H2 × H3 (×18). Inference GPUs fall by the smaller of H4 and H5 (×100):
-a GPU is bought whole, so the fleet covers whichever need runs out first. Inference cost does not
-depend on model size, so H1 helps training only.
+A supporting input — **prompt-processing (prefill) speed vs the transformer**, ×10.3 Current / ×18.4
+Optimized kernels (Inputs B24/B25) — is a Helarctos kernel property but not a headline lever; it is the
+only inference input that differs by scenario.
+
+Training GPU-hours fall by H1 × H2 × H3 (×18). Inference tokens per GPU rise by H5 × H6 with the prompts
+added back, `(1 + rq) / (rq/PF + 1/(H5 × H6))` = ×368 (×382 Optimized), where rq ≈ 0.23% is the
+transformer's prompt time over its decode time (`inference_throughput()` in the model; a live formula
+at Inputs B27). Inference GPUs fall by the smaller of H4 and that (×368): a GPU is bought whole, so the
+fleet covers whichever need runs out first. With H4 at the measured ×2,032, tokens per GPU binds, so
+faster decode (H6) counts in the dollars. Inference cost does not depend on model size, so H1 helps
+training only.
+
+**Caveat on H4.** ×2,032 is measured on our test model (197 KB of transformer KV per token × 262,144
+tokens = 51.6 GB vs a constant 25.4 MB Helarctos state, 2026-08-14). For frontier-size models with
+grouped-query attention the model's own frontier-geometry estimate is ~×208 at 262k
+(`fleet_memory_lever(262144)`), at which point memory would bind again: about −$0.5B on FY2026.
 
 **Model size.** H1 is quoted at **~1T dense-equivalent**. Frontier labs no longer disclose sizes, and
 almost all large models are now mixture-of-experts: Grok 5 is announced at 6T, Kimi K3 is 2.8T, but
@@ -43,7 +58,7 @@ them as a technical appendix (Totals, Inputs, Sensitivity, CostLadder, ServingTr
 Methodology).
 
 - **Summary**: the FY2026 / FY2025 headline; where the FY2026 saving comes from — **Training**
-  (~$136B) and **Inference** (~$239B), each including the power its GPUs would have drawn — with the
+  (~$136B) and **Inference** (~$241B), each including the power its GPUs would have drawn — with the
   Helarctos levers behind each fleet listed underneath it; a per-company table; a legend.
 - **Value Bridge**: a step-by-step walk from disclosed capex to the saving (spend → split the chip
   fleet into training and inference → training → inference → result), then the levers switched on
@@ -52,23 +67,24 @@ Methodology).
   | Step | Spend cut, FY2026 |
   |---|---|
   | Smaller model trained on fewer tokens — training (H1–H3) | ~$136B |
-  | + Fixed-size memory: many more conversations per GPU — inference (H4, H5) | ~$375B |
+  | + Fixed-size memory, more conversations per GPU, faster decode — inference (H4–H6) | ~$377B |
 
-- **Levers**: the scenario switch (C4); the five Helarctos levers with how sure we are of each, what
+- **Levers**: the scenario switch (C4); the six Helarctos levers with how sure we are of each, what
   it means and where it saves money; how they combine; then, separately, the **market & company
   data** the front tabs use (with live values and where to edit them) and the per-company training
   shares (25–55%).
 - **What Matters**: each input moved to a plausible low and high value, one at a time, grouped into
   **Helarctos levers** and **market & company data**, with a tornado chart (teal = Helarctos lever,
-  gray = market data). The chip-share inputs (server and accelerator shares, ±15% → ±$50–56B) move the
-  answer more than any Helarctos lever; the levers matter only if they fall far below today's values.
+  gray = market data). The chip-share inputs (server and accelerator shares, ±15% → ±$50–57B) move the
+  answer more than any Helarctos lever. Only H1 (with H2) swings it by $10B or more; H4, H5 and H6 each
+  move it by under $2B across their ranges, and a 32k-token average conversation costs ~$4B.
 
-**Cell markers** (workbook and app): **teal + H1–H5** = a Helarctos lever; **★ with an orange
+**Cell markers** (workbook and app): **teal + H1–H6** = a Helarctos lever; **★ with an orange
 border** = a high-impact input (swings FY2026 by $10B or more); **◆ with a purple fill** = one of the
 only values that differ between the two scenarios.
 
 The bridge takes no memory credit on training and prices inference on whole GPUs. It lands within ~2%
-of the technical Totals tab ($375B vs $383B FY2026), which prices memory (~60% of a GPU's cost) and
+of the technical Totals tab ($377B vs $385B FY2026), which prices memory (~60% of a GPU's cost) and
 compute (~40%) separately. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs;
 an import-time check asserts it reproduces the Totals engine exactly when given the same levers.
 
@@ -79,16 +95,16 @@ between them; every other input is shared.
 
 | ◆ Input | Current kernels (default) | Optimized kernels |
 |---|---|---|
-| H5 Inference throughput per GPU, same model size (Inputs B24/B25) | ×368 | ×382 |
+| Prompt-processing (prefill) speed vs the transformer (Inputs B24/B25; supporting) | ×10.3 | ×18.4 |
 | H3 Training speed per token, same model size (Levers D11/E11) | ×1 | ×1 (no credit yet) |
-| → Inference compute (FLOPs) lever = throughput (model size doesn't enter) | ×368 | ×382 |
+| → Inference tokens per GPU from H5 × H6 + prompts (Inputs B27; model size doesn't enter) | ×368 | ×382 |
 
-Both are quoted at a 262k-token average conversation. Current kernels = the banked kernel results
-(prefill ×3.94) plus the aggregate-decode ESTIMATE (2.5 ms/token × 64 resident streams per GPU,
-measurement pending); Optimized kernels = the funded kernel programme lands (prefill ×7.03, TARGET).
-At 262k the dollars are within rounding of each other (FY2026 ~$375B front tabs / ~$383B Totals in
-both), because inference GPUs are limited by memory (÷100), not compute. The scenario would matter
-if the optimized kernels also sped up training — enter that under H3.
+Both are quoted at a 262k-token average conversation. H5 (64 streams) and H6 (the 2.5 ms/token
+aggregate-decode ESTIMATE, measurement pending) are the same in both. Current kernels = prefill at the
+banked kernel speed-up (×3.94); Optimized kernels = the funded kernel programme lands (×7.03, TARGET).
+Prompts are only ~0.23% of the transformer's time at 262k, so the dollars barely move (FY2026 ~$376.83B
+vs ~$376.86B front tabs; ~$385.06B vs ~$385.08B Totals). The scenario would matter if the optimized
+kernels also sped up training — enter that under H3.
 
 ## Where the numbers come from
 
@@ -123,9 +139,9 @@ if the optimized kernels also sped up training — enter that under H3.
 - **Per company:** `total capex × data-center share × server share × accelerator share` → accelerator
   (chip) capex → fleet → power/opex → avoided spend → capitalized value. FY2025 actual + FY2026.
 - **Technical engine (Totals, company tabs):** cost-weighted reduction
-  `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 141×.
+  `= 1 / (mem_share/mem_factor + (1−mem_share)/flop_factor)` ≈ 724×.
 - **Audience engine (Summary, Value Bridge):** training fleet ÷ GPU-hour lever (×18); inference fleet ÷
-  min(memory lever, compute lever) (×100); each fleet's power shrinks with it and is folded into its
+  min(memory lever H4, tokens per GPU from H5 × H6) (×368); each fleet's power shrinks with it and is folded into its
   number.
 - **Net AI economics (cash basis):** `AI revenue − AI capex − AI power`; with the architecture, add the
   spend cut.
@@ -137,7 +153,7 @@ Deploy free on [Streamlit Community Cloud](https://share.streamlit.io) — see *
 The app is a **tab-for-tab mirror of the workbook** (Summary, Value Bridge, Levers, What Matters,
 each company, Totals, Inputs, Sensitivity, CostLadder, Serving·Training, Evidence, Methodology), with
 the same colours and markers. The sidebar is grouped the same way: the scenario, then the
-**Helarctos levers** (H4, H5, and the workload behind H5), then **market & modelling data**
+**Helarctos levers** (H4, H5, H6, and the workload behind them), then **market & modelling data**
 (technical-only inputs folded away). Per-company capex and shares are in the ✏️ panel on each company
 tab; training shares on the Levers tab. Every grid recomputes live.
 
@@ -177,7 +193,7 @@ figures still match what the model computes.
 
 ## Colour / marker convention (workbook and app)
 
-- **teal, H1–H5** — a Helarctos lever (the only inputs about the architecture)
+- **teal, H1–H6** — a Helarctos lever (the only inputs about the architecture)
 - **yellow** — a market, company or modelling assumption you can edit
 - **green** — disclosed data, from filings or markets
 - **blue** — a formula
@@ -199,7 +215,7 @@ established what the serving levers rest on:
   stream the transformer is faster at 64k context (~4.9 vs ~5.7 ms GPU-busy). What it cannot do is hold
   many long conversations on one card: its KV cache grows ~197 KB per token of context per stream
   (51.5 GB for one 262k-token stream), against a constant ~25.4 MB state for bAttention — a measured
-  ×2,032 memory ratio at 262k, capped at ÷100 in the model.
+  ×2,032 memory ratio at 262k, used as H4 (was capped at ÷100 until 2026-09-29).
 - The transformer's 1/context throughput law, anchored at 32k, predicts the 262k cell to 0.006%.
 - Both measured cells run against us: the transformer was at 95.6% GPU-busy; bAttention's 64-stream
   cell was 9.5% GPU-busy on an unoptimised decode path, a grid cap rather than a ceiling.
@@ -223,5 +239,9 @@ Receipt file names for every measured constant are listed in the constants block
   estimates.
 - The equal-quality parameter ratio is a projection from measured models (47M–663M parameters) to
   frontier scale.
+- H4 (memory, ×2,032) is measured on our test model. For frontier-size models with grouped-query
+  attention the frontier-geometry estimate is ~×208 at 262k, where memory would bind again (≈ −$0.5B
+  on FY2026). H6 (faster decode) is an estimate until the aggregate-decode receipt lands (×2.6 measured
+  on our older kernels, ≈ −$0.8B).
 - The saving is spend no longer needed for the same AI output; firms will likely reinvest it.
 - This is an analytical estimate, not investment advice.

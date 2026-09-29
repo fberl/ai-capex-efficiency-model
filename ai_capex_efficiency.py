@@ -6,14 +6,14 @@ Layout:
                    Inference) with the Helarctos levers behind each fleet, by company, legend
   - Value Bridge : step by step from AI spend to the saving; levers one at a time; cross-check
                    against Totals; per-company engine tables (Python twin: value_bridge())
-  - Levers       : scenario switch (C4); the five Helarctos levers H1-H5; how they combine;
+  - Levers       : scenario switch (C4); the six Helarctos levers H1-H6; how they combine;
                    the market & company data the front tabs use; per-company training shares
   - What Matters : one-at-a-time sensitivity, Helarctos levers vs market data, tornado chart
   - one tab per company: capex build from filings (FY2025 actual + FY2026)
   TECHNICAL APPENDIX: Totals, Inputs, Sensitivity, CostLadder, ServingTraining, Evidence,
-  Methodology (the older memory/compute cost-split engine, ~x141 cost-weighted).
+  Methodology (the older memory/compute cost-split engine, ~x724 cost-weighted).
 
-Every output is a LIVE FORMULA. Colours: teal + H1-H5 = Helarctos lever; yellow = market /
+Every output is a LIVE FORMULA. Colours: teal + H1-H6 = Helarctos lever; yellow = market /
 modelling assumption; green = disclosed data; blue = formula; ◆ purple = differs by scenario;
 ★ orange border = high-impact input. fit_rows() sizes every row so wrapped text is not clipped.
 Run:  uv run --with openpyxl python ai_capex_efficiency.py
@@ -34,6 +34,8 @@ from ai_capex_model import (  # single source of truth for defaults
     training_helps_headline_threshold, headline_with_training,
     TRAINING_CURRICULA, KV_MB_PER_TOKEN_PER_STREAM,
     serving_context_sensitivity, compute_year,
+    H5_CONVERSATIONS, H6_DECODE, PF_CURRENT, PF_OPTIMIZED, WORKLOAD,
+    decode_tokens_per_s_per_gpu, prefill_tokens_per_s, fleet_memory_lever,
 )
 
 INPUT_FILL = PatternFill(
@@ -46,7 +48,7 @@ CALC_FILL = PatternFill("solid", fgColor="DDEBF7")  # blue   = derived formula
 SCEN_FILL = PatternFill("solid", fgColor="E4DFEC")  # purple = differs by scenario (◆)
 HEAD_FILL = PatternFill("solid", fgColor="1F4E78")
 SUB_FILL = PatternFill("solid", fgColor="BDD7EE")
-HLEV_FILL = PatternFill("solid", fgColor="A8E6D2")  # teal = a Helarctos lever (H1-H5)
+HLEV_FILL = PatternFill("solid", fgColor="A8E6D2")  # teal = a Helarctos lever (H1-H6)
 HLEV_FONT = Font(bold=True, color="0B5E48")
 BOLD = Font(bold=True)
 WHITE_BOLD = Font(bold=True, color="FFFFFF")
@@ -152,7 +154,7 @@ def build_inputs(inp):
     header(
         inp,
         1,
-        "INPUTS — teal = Helarctos lever (H1–H5) · yellow = market / modelling assumption · "
+        "INPUTS — teal = Helarctos lever (H1–H6) · yellow = market / modelling assumption · "
         "green = disclosed or market data · blue = formula",
         span=5,
     )
@@ -163,19 +165,21 @@ def build_inputs(inp):
             "Memory reduction factor",
             G["mem_factor"],
             "x",
-            "1e-2 memory = 100x less (O(1) internal state vs transformer O(T) KV cache).",
+            "MEASURED x2,032 at 262k on our test model (2026-08-14): 197 KB of transformer KV per token x 262,144 "
+            "tokens = 51.6 GB vs a constant 25.4 MB Helarctos state. Caveat: for frontier-size models with "
+            "grouped-query attention the frontier-geometry estimate is ~x208 at 262k, where memory would bind "
+            "again (about -$0.5B on FY2026).",
             INPUT_FILL,
         ),
         (
             "FLOPs reduction factor",
-            # LIVE: single scenario = inference throughput per GPU (B24) x the
-            # equal-quality parameter ratio (B23), computed in B25.
+            # LIVE: inference throughput per GPU from H5 x H6 and prompt speed (B27)
             "=$B$27",
             "x",
-            "= B27 = inference throughput per GPU at a 262k-token average context for the active scenario "
-            "(B26, picked on the Levers tab). Inference cost does not scale with model size, so the "
-            "equal-quality ratio (B23) applies to training only. Edit B24-B25, or "
-            "overtype this cell to pin the lever. See ServingTraining for the measured background.",
+            "= B27 = inference throughput per GPU at a 262k-token average context, built live from H5 (B28), "
+            "H6 (B29) and the active scenario's prompt-processing speed (B26). Inference cost does not scale "
+            "with model size, so the equal-quality ratio (B23) applies to training only. Overtype this cell to "
+            "pin the lever. See ServingTraining for the measured background.",
             CALC_FILL,
         ),
         (
@@ -257,8 +261,8 @@ def build_inputs(inp):
         ),
     ]
     r = 2
-    KEY_INPUTS = {"Memory reduction factor", "Discount rate"}  # high impact (What Matters tab)
-    LEVER_ROWS = {"Memory reduction factor": "H4", "FLOPs reduction factor": "H5"}
+    KEY_INPUTS = {"Discount rate"}  # high impact (What Matters tab); H4 is not (its swing is < $10B)
+    LEVER_ROWS = {"Memory reduction factor": "H4", "FLOPs reduction factor": "H5·H6"}
     KIND = {"Memory share of GPU cost (BOM)": "Market data (teardowns)", "Opex / energy reduction factor": "Derived",
             "Fully-loaded cost per GPU": "Market data", "Wall power per GPU": "Market data",
             "Electricity rate": "Market data", "SpaceX market cap": "Market data"}
@@ -276,7 +280,8 @@ def build_inputs(inp):
             border=True,
         )
         put(inp, r, 3, unit)
-        kind = f"Helarctos lever {code}" if code else KIND.get(label, "Modelling assumption")
+        kind = (f"Helarctos lever{'s' if '·' in code else ''} {code}" if code
+                else KIND.get(label, "Modelling assumption"))
         put(inp, r, 4, kind)
         if code:
             lever_cell(lab)
@@ -307,7 +312,8 @@ def build_inputs(inp):
     put(inp, 20, 3, "x")
     put(inp, 20, 4, "Derived")
     put(inp, 20, 5, "1 / residual. The $ reduction used by the technical tabs (Totals, company tabs).", wrap=True)
-    header(inp, 22, "HELARCTOS LEVERS H1 and H5 — 262k-token average context; ◆ purple = differs by scenario", span=5)
+    header(inp, 22, "HELARCTOS LEVERS H1, H5, H6 + prompt-processing speed — 262k-token average context; "
+                    "◆ purple = differs by scenario", span=5)
     lever_cell(put(inp, 23, 1, "H1 · Equal-quality parameter ratio at ~1T dense-equivalent (smaller model; H2 = same) ★"))
     put(inp, 23, 2, 4.2185, fmt="0.00", fill=HLEV_FILL, border=True)
     key_cell(inp["B23"])
@@ -318,43 +324,67 @@ def build_inputs(inp):
         "23.7% of the params at 1T -> x4.22 compute per token at equal quality. 84.2% at 1B, 55.2% at "
         "10B, 36.2% at 100B, 15.5% at 10T (x6.44). A projection of the two fits, not a measurement. "
         "Same in both scenarios. Scale: ~1T dense-equivalent: about what today's 5-6T-total mixture-of-experts flagships amount to (Grok 5 at 6T, Kimi K3 at 2.8T; a mixture-of-experts model runs only a fraction of its parameters per token and performs roughly like a dense model of sqrt(total x active) size).", wrap=True)
-    s1t = param_matching_gain(DECK_DEPLOYMENT_SCALE)
-    _cur = TODAY_FLOP_LEVER_20260901 / s1t
-    _opt = CAMPAIGN_LANDED_FLOP_LEVER / s1t
-    _tp = {int(d["context_tokens"]): d["today_lever"] / s1t
+    c = CAMPAIGN_LANDED_20260831
+    _tp = {int(d["context_tokens"]): d["today_lever"] / param_matching_gain(DECK_DEPLOYMENT_SCALE)
            for d in serving_context_sensitivity((8192, 32768, 131072))}
-    lever_cell(put(inp, 24, 1, "H5 · Inference throughput per GPU — Current kernels ◆★"))
-    put(inp, 24, 2, round(_cur, 2), fmt="0.0", fill=SCEN_FILL, border=True)
-    put(inp, 24, 3, "x")
-    lever_cell(put(inp, 24, 4, "Helarctos lever H5"))
-    put(inp, 24, 5,
-        f"Tokens served per GPU vs the transformer at the same model size, "
-        f"{CAMPAIGN_LANDED_20260831['context_tokens']:,}-token average context: decode "
-        f"{CAMPAIGN_LANDED_20260831['decode_own_ms_per_token']:.1f} ms/token x "
-        f"{CAMPAIGN_LANDED_20260831['streams_per_gpu']} resident streams (ESTIMATE, aggregate-decode receipt "
-        f"PENDING), prefill at the banked x{KERNEL_SPEEDUP_REALIZED_20260824:.3f}; transformer at its measured "
-        f"KV ceiling (1 stream per GPU at 262k). Context matters: ~x{_tp[8192]:.0f} at 8k, ~x{_tp[32768]:.0f} "
-        f"at 32k, ~x{_tp[131072]:.0f} at 128k.", wrap=True)
-    lever_cell(put(inp, 25, 1, "H5 · Inference throughput per GPU — Optimized kernels ◆★"))
-    put(inp, 25, 2, round(_opt, 2), fmt="0.0", fill=SCEN_FILL, border=True)
-    put(inp, 25, 3, "x")
-    lever_cell(put(inp, 25, 4, "Helarctos lever H5"))
-    put(inp, 25, 5,
-        f"Same, with prefill at the full x{CEILING_PREFILL_SPEEDUP:.2f} = x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} "
-        f"MEASURED x x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded kernel programme). Decode dominates "
-        f"at long context, so it sits only ~{100 * (_opt / _cur - 1):.0f}% above Current kernels.", wrap=True)
-    lever_cell(put(inp, 26, 1, "H5 · Inference throughput per GPU — ACTIVE scenario ◆"))
+    pf_rows = [
+        (24, "Prompt-processing speed vs the transformer — Current kernels ◆", PF_CURRENT,
+         f"Supporting input (a Helarctos kernel property, not a headline lever): our prefill tokens/s at 262k "
+         f"with the banked x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} kernel speed-up (MEASURED) / the "
+         f"transformer's. The only inference input that differs by scenario."),
+        (25, "Prompt-processing speed vs the transformer — Optimized kernels ◆", PF_OPTIMIZED,
+         f"Same at the full x{CEILING_PREFILL_SPEEDUP:.2f} = x{KERNEL_SPEEDUP_REALIZED_20260824:.3f} MEASURED x "
+         f"x{KERNEL_SPEEDUP_REMAINING_TARGET:.3f} TARGET (the funded kernel programme). Prompts are only ~0.2% "
+         f"of the transformer's time at 262k, so this barely moves the lever."),
+    ]
+    for rr, lab, val, note in pf_rows:
+        put(inp, rr, 1, lab)
+        put(inp, rr, 2, val, fmt="0.0", fill=SCEN_FILL, border=True)
+        put(inp, rr, 3, "x")
+        put(inp, rr, 4, "Helarctos kernels (supporting)")
+        put(inp, rr, 5, note, wrap=True)
+    put(inp, 26, 1, "Prompt-processing speed — ACTIVE scenario ◆")
     put(inp, 26, 2, '=IF(Scenario="Optimized kernels",$B$25,$B$24)', fmt="0.0", fill=SCEN_FILL, border=True)
     put(inp, 26, 3, "x")
-    lever_cell(put(inp, 26, 4, "Helarctos lever H5"))
+    put(inp, 26, 4, "Derived")
     put(inp, 26, 5, "Follows the scenario picked on the Levers tab (cell C4).", wrap=True)
-    for c in ("B24", "B25"):
-        key_cell(inp[c])
-    lever_cell(put(inp, 27, 1, "H5 · Inference compute (FLOPs) lever used = B26"))
-    put(inp, 27, 2, "=$B$26", fmt="0", fill=CALC_FILL, border=True, bold=True)
+    lever_cell(put(inp, 27, 1, "H5 × H6 → inference compute (FLOPs) lever used"))
+    put(inp, 27, 2, "=(1+$B$32)/($B$32/$B$26+1/($B$28*$B$29))", fmt="0.0", fill=CALC_FILL, border=True, bold=True)
     put(inp, 27, 3, "x")
-    lever_cell(put(inp, 27, 4, "Helarctos lever H5"))
-    put(inp, 27, 5, "B3 points here.", wrap=True)
+    put(inp, 27, 4, "Derived")
+    put(inp, 27, 5,
+        f"Tokens served per GPU vs the transformer at the same model size = (1 + B32) / (B32/B26 + 1/(B28 x B29)): "
+        f"decode at H5 x H6, plus prompt processing at B26. B3 points here. Context matters: ~x{_tp[8192]:.0f} "
+        f"at an 8k-token average context, ~x{_tp[32768]:.0f} at 32k, ~x{_tp[131072]:.0f} at 128k.", wrap=True)
+    lever_cell(put(inp, 28, 1, "H5 · More conversations per GPU"))
+    put(inp, 28, 2, H5_CONVERSATIONS, fmt="0", fill=HLEV_FILL, border=True)
+    put(inp, 28, 3, "x")
+    lever_cell(put(inp, 28, 4, "Helarctos lever H5"))
+    put(inp, 28, 5,
+        f"MEASURED 2026-08-14: {c['streams_per_gpu']} resident 262k-token conversations on one GPU in 1.6 GB of "
+        f"state (a grid cap, not a ceiling) vs the transformer's 1 — a 2nd OOMs. Enabled by the small memory (H4).",
+        wrap=True)
+    lever_cell(put(inp, 29, 1, "H6 · Faster decode per token"))
+    put(inp, 29, 2, H6_DECODE, fmt="0.00", fill=HLEV_FILL, border=True)
+    put(inp, 29, 3, "x")
+    lever_cell(put(inp, 29, 4, "Helarctos lever H6"))
+    put(inp, 29, 5,
+        f"ESTIMATE: transformer {1000 / decode_tokens_per_s_per_gpu('transformer', 262144):.2f} ms per token at "
+        f"262k / our {c['decode_own_ms_per_token']:.1f} ms (post-kernel-edit estimate; aggregate-decode receipt "
+        f"PENDING). On our older, unoptimised kernels we MEASURED ~5.7 vs 14.9 ms GPU-busy = x2.6.", wrap=True)
+    put(inp, 30, 1, "Input : output tokens per conversation")
+    put(inp, 30, 2, float(WORKLOAD["in_out_ratio"]), fmt="0.0", fill=INPUT_FILL, border=True)
+    put(inp, 30, 4, "Modelling assumption")
+    put(inp, 30, 5, "~10:1 = code / reasoning / agent traces.", wrap=True)
+    put(inp, 31, 1, "Transformer decode ÷ prompt speed at 262k")
+    put(inp, 31, 2, decode_tokens_per_s_per_gpu("transformer", 262144) / prefill_tokens_per_s("transformer", 262144),
+        fmt="0.000000", fill=DATA_FILL, border=True)
+    put(inp, 31, 4, "Measured (transformer)")
+    put(inp, 31, 5, "Tokens/s generated ÷ prompt tokens/s processed, per GPU (measured transformer rates).", wrap=True)
+    put(inp, 32, 1, "Transformer prompt time ÷ decode time")
+    put(inp, 32, 2, "=$B$30*$B$31", fmt="0.00%", fill=CALC_FILL, border=True)
+    put(inp, 32, 4, "Derived")
+    put(inp, 32, 5, "= B30 x B31: the transformer spends ~0.23% of its time on the prompt at 262k.", wrap=True)
 
 
 def build_company(ws, name, c25, c26, mcap, ai_rev, basis, sources=()):
@@ -838,7 +868,7 @@ def build_totals(tot, tabs):
     header(tot, gb, "TABS", span=8)
     guide = [
         ("Summary / Value Bridge / Levers / What Matters",
-         "the plain-language front tabs: headline, training vs inference split, the Helarctos levers H1–H5, what moves the answer"),
+         "the plain-language front tabs: headline, training vs inference split, the Helarctos levers H1–H6, what moves the answer"),
         (
             " / ".join(tabs),
             "one tab each: full build capex -> infra -> servers -> accelerator -> fleet/opex -> value",
@@ -869,7 +899,7 @@ def build_totals(tot, tabs):
         tot,
         lr,
         1,
-        "Legend: teal = Helarctos lever (H1–H5)  ·  yellow = market / modelling assumption  ·  green = disclosed filing or market data  ·  blue = formula  ·  ◆ purple = differs by scenario  ·  ★ = high impact.",
+        "Legend: teal = Helarctos lever (H1–H6)  ·  yellow = market / modelling assumption  ·  green = disclosed filing or market data  ·  blue = formula  ·  ◆ purple = differs by scenario  ·  ★ = high impact.",
         bold=True,
     )
     tot.merge_cells(start_row=lr, start_column=1, end_row=lr, end_column=8)
@@ -1194,11 +1224,11 @@ def build_methodology(meth):
         ("METHODOLOGY & SOURCES", True),
         ("", False),
         (
-            "Engine: GPU cost ~60% memory / ~40% compute. Memory x100 (lever H4) + inference compute x368 (lever H5: throughput per GPU at a 262k-token average context, decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the banked x3.936; inference cost does not depend on model size) -> ~x141 cost-weighted (Inputs B20). The front tabs price inference on whole GPUs instead (the fleet shrinks by the smaller lever, x100) and training on GPU-hours (H1 x H2 x H3 = ~x18).",
+            "Engine: GPU cost ~60% memory / ~40% compute. Memory x2,032 (lever H4, MEASURED at 262k on our test model) + inference compute x368 (levers H5 x H6: 64 conversations per GPU x 6.25x faster decode, with prompt processing added back at the active scenario's prefill speed; inference cost does not depend on model size) -> ~x724 cost-weighted (Inputs B20). The front tabs price inference on whole GPUs instead (the fleet shrinks by the smaller lever, x368) and training on GPU-hours (H1 x H2 x H3 = ~x18).",
             False,
         ),
         (
-            "  Floored by the least-reduced part — at these levers that is MEMORY (/100). The Today/Ceiling pair (retired 2026-09-29) and the pre-campaign family (x9.24 -> ~20x) are no longer used.",
+            "  Floored by the least-reduced part — at these levers that is COMPUTE (tokens per GPU, x368). With memory at the frontier-geometry ~x208 it would be memory again. The Today/Ceiling pair (retired 2026-09-29) and the pre-campaign family (x9.24 -> ~20x) are no longer used.",
             False,
         ),
         ("", False),
@@ -1241,7 +1271,7 @@ def build_methodology(meth):
         ("", False),
         ("KEY RESULTS (defaults)", True),
         (
-            "- Cost-weighted reduction ~x141 — memory-floored at /100.",
+            "- Cost-weighted reduction ~x724 — compute-floored (tokens per GPU x368; memory x2,032).",
             False,
         ),
         (
@@ -1249,11 +1279,11 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- With our architecture: spend cut ~$162B -> burn shrinks to ~ -$122B/yr (~45% of AI spend cut).",
+            "- With our architecture: spend cut ~$163B -> burn shrinks to ~ -$121B/yr (~45% of AI spend cut).",
             False,
         ),
         (
-            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$162B/yr (~$2.7T capitalized); FY26 ~$383B/yr (~$6.4T). The cut saturates: ~99% of the chip bill.",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$163B/yr (~$2.7T capitalized); FY26 ~$385B/yr (~$6.4T). The cut saturates: ~99% of the chip bill.",
             False,
         ),
         (
@@ -1364,10 +1394,10 @@ def build_serving_training(ws):
            f"(${SERVING['gpu_hr']:.2f}/GPU-hr). Source: bdm/docs/deck/build/derived.json (keys in ai_capex_model.MEASURED).")
     # --- measured workload block --------------------------------------------
     # Fixed rows on purpose. Since the 2026-09-01 re-base this blend is
-    # measured BACKGROUND (pre-campaign kernels): Inputs!B24/B25 carry the
+    # measured BACKGROUND (pre-campaign kernels): Inputs!B24-B29 carry the
     # model-computed full-workload levers and Inputs!B3 points at B24, so
     # editing B7/B8/B9 moves this sheet but no longer drives the workbook.
-    header(ws, 4, "WORKLOAD — measured pre-campaign blend (background; the workbook lever lives at Inputs B24/B25)")
+    header(ws, 4, "WORKLOAD — measured pre-campaign blend (background; the workbook lever lives at Inputs B24-B29)")
     put(ws, 5, 1,
         "Training, prefill and decode point in opposite directions at today's kernel maturity, so the "
         "compute lever is blended over the workload rather than fixed. Cost per GENERATED token = "
@@ -1447,7 +1477,7 @@ def build_serving_training(ws):
     put(ws, 28, 2,
         "=IF($B$9>0,1/($B$9/$B$17+(1-$B$9)/($B$26/$B$27)),$B$26/$B$27)",
         "0.00", fill=CALC_FILL, border=True, bold=True)
-    put(ws, 28, 6, "Measured pre-campaign workload blend (2026-08-14 basis), kept as BACKGROUND. RETIRED as the workbook lever 2026-09-01: Inputs!B24/B25 now carry the model-computed full-workload levers (decode 2.5 ms x 64 streams estimate; this cell no longer feeds Inputs!B3).", wrap=True)
+    put(ws, 28, 6, "Measured pre-campaign workload blend (2026-08-14 basis), kept as BACKGROUND. RETIRED as the workbook lever 2026-09-01: Inputs!B24-B29 now carry the model-computed full-workload levers (decode 2.5 ms x 64 streams estimate; this cell no longer feeds Inputs!B3).", wrap=True)
     put(ws, 29, 1, "  of which: prefill advantage")
     put(ws, 29, 2, "=($B$7/$B$24)/($B$7/$B$25)", "0.00", fill=CALC_FILL, border=True)
     put(ws, 30, 1, "  of which: decode advantage")
@@ -1524,7 +1554,7 @@ def build_serving_training(ws):
         r += 1
     r += 1
 
-    header(ws, r, "The measured workload blend (pre-campaign background; the workbook lever lives at Inputs B24/B25)")
+    header(ws, r, "The measured workload blend (pre-campaign background; the workbook lever lives at Inputs B24-B29)")
     r += 1
     put(ws, r, 1,
         "Training, prefill and decode point in OPPOSITE directions at today's kernel maturity, so a "
@@ -1544,7 +1574,7 @@ def build_serving_training(ws):
         "above ~0.30 also takes the blend below 1 (it was ~0.06 before the kernel re-base). "
         "All are reachable in the live model. NOTE (2026-09-01): this blend was measured on the "
         "PRE-CAMPAIGN kernels and no longer sets the workbook's flop_factor — the scenario levers at "
-        "Inputs B24/B25 fold in the banked kernel results and the aggregate-decode estimate.",
+        "Inputs B24-B29 fold in the banked kernel results and the aggregate-decode estimate.",
         wrap=True)
     r += 2
 
@@ -1674,7 +1704,7 @@ def build_serving_training(ws):
 # AUDIENCE LAYER: Summary / Value Bridge / Levers / What Matters.
 # Plain-language front tabs. Same base as the company tabs, with the chip fleet
 # split into a TRAINING fleet and an INFERENCE fleet so every dollar is attributable
-# to the Helarctos lever (H1-H5) that produces it (ai_capex_model.value_bridge is the
+# to the Helarctos lever (H1-H6) that produces it (ai_capex_model.value_bridge is the
 # Python twin). Formulas use workbook-level NAMES (TrainLever, ServeGPULever, ...) so
 # a reader can follow them without decoding cell addresses.
 # =====================================================================================
@@ -1772,7 +1802,7 @@ def key_cell(cell):
 
 
 def lever_cell(cell):
-    """Helarctos lever label: teal fill, dark-teal bold text, H1-H5 badge in the text."""
+    """Helarctos lever label: teal fill, dark-teal bold text, H1-H6 badge in the text."""
     cell.fill = HLEV_FILL
     cell.font = HLEV_FONT
     cell.border = BORDER
@@ -1813,17 +1843,17 @@ def _labels(ser, fmt):
 # ---- Levers ---------------------------------------------------------------------
 # Fixed anchors (ai_capex_model.sensitivity_table quotes them; main() asserts).
 LV_SCEN_ROW = 4
-LV_LEVER_ROW0 = 9          # H1..H5 on rows 9..13
-LV_COMBO_ROW0 = 16
-LV_MARKET_ROW0 = 24
-LV_COMPANY_ROW0 = 34       # per-company training shares
+LV_LEVER_ROW0 = 9          # H1..H6 on rows 9..14, prompt-processing speed (supporting) on 15
+LV_COMBO_ROW0 = 18
+LV_MARKET_ROW0 = 27
+LV_COMPANY_ROW0 = 37       # per-company training shares
 
 
 def build_levers(ws, wb):
     widths(ws, {"A": 6, "B": 44, "C": 17, "D": 15, "E": 15, "F": 28, "G": 58, "H": 24})
-    _title(ws, "LEVERS — what Helarctos changes (H1–H5) vs. market & company data", 8)
+    _title(ws, "LEVERS — what Helarctos changes (H1–H6) vs. market & company data", 8)
     _para(ws, 2,
-          "Only the five teal levers (H1–H5) are about the Helarctos architecture. Everything else the front "
+          "Only the six teal levers (H1–H6) are about the Helarctos architecture. Everything else the front "
           "tabs use is market or company data, listed further down. ◆ purple = differs between the two "
           "scenarios · ★ orange border = high-impact input (What Matters tab).", 1, 8)
 
@@ -1835,14 +1865,15 @@ def build_levers(ws, wb):
     dv.add(f"C{r}")
     _name(wb, "Scenario", f"Levers!$C${r}")
     _para(ws, r, "Current kernels = the software we have built and measured. Optimized kernels = our funded "
-                 "kernel programme lands (a TARGET). Only the ◆ cells change: H3 and H5.", 4, 8, note=True)
+                 "kernel programme lands (a TARGET). Only the ◆ cells change: H3 and prompt-processing speed.", 4, 8,
+          note=True)
     put(ws, r + 1, 2, "Average conversation length (context)", bold=True)
     put(ws, r + 1, 3, f"{ctx_label(CAMPAIGN_LANDED_20260831['context_tokens'])} tokens", fill=CALC_FILL,
         border=True, bold=True)
-    _para(ws, r + 1, "H4 and H5 are quoted at this context. Longer conversations favour Helarctos more.",
+    _para(ws, r + 1, "H4, H5 and H6 are quoted at this context. Longer conversations favour Helarctos more.",
           4, 8, note=True)
 
-    _section(ws, LV_LEVER_ROW0 - 2, "HELARCTOS LEVERS — the five things the architecture changes", 8)
+    _section(ws, LV_LEVER_ROW0 - 2, "HELARCTOS LEVERS — the six things the architecture changes", 8)
     _thead(ws, LV_LEVER_ROW0 - 1, ["#", "Helarctos lever", "Active value", "◆ Current kernels",
                                    "◆ Optimized kernels", "How sure are we?", "What it means",
                                    "Saves money in"], height=32)
@@ -1869,16 +1900,23 @@ def build_levers(ws, wb):
                "(enter one under Optimized kernels if the kernel programme delivers it).",
                "Training"),
         "H4": ("=Inputs!$B$2", None, FMT_DIV,
-               "MEASURED — ×2,000 at 262k tokens; capped at ÷100 to stay conservative",
+               "MEASURED ×2,032 at 262k (on our test model). Frontier-size models with grouped-query attention: "
+               f"~÷{fleet_memory_lever(262144):.0f} (estimate), where memory would bind again (about −$0.5B)",
                "A transformer's memory (the KV cache) grows with every token of every live conversation — "
-               "~51 GB for one 262k-token conversation. Helarctos keeps a fixed-size state (~25 MB).",
-               "Inference GPUs (the memory limit)"),
-        "H5": ("=Inputs!$B$24", "=Inputs!$B$25", FMT_X0,
-               "ESTIMATE — built on measured concurrency and prompt speed; generation speed awaits measurement",
-               f"One GPU holds 64 long conversations where a transformer fits 1–2, with no growing cache to "
-               f"re-read. More tokens per GPU: ~×{tp(8192):.0f} at 8k context, ~×{tp(131072):.0f} at 128k, "
-               f"~×{tp(262144):.0f} at 262k (used here).",
-               "Inference GPUs (the compute limit)"),
+               "51.6 GB for one 262k-token conversation. Helarctos keeps a fixed-size state (25.4 MB).",
+               "Inference GPUs (the memory limit; not binding at 262k)"),
+        "H5": ("=Inputs!$B$28", None, FMT_X0,
+               "MEASURED — 64 conversations in 1.6 GB on one GPU (a grid cap); the transformer's 2nd OOMs",
+               "The small memory (H4) lets one GPU hold 64 resident 262k-token conversations at once, where a "
+               "transformer fits 1.",
+               "Inference GPUs (tokens per GPU)"),
+        "H6": ("=Inputs!$B$29", None, FMT_X1,
+               "ESTIMATE — 2.5 ms per token after the kernel edits (receipt pending); MEASURED ×2.6 on our older "
+               "kernels",
+               f"Each conversation's next token takes 2.5 ms instead of the transformer's "
+               f"{1000 / decode_tokens_per_s_per_gpu('transformer', 262144):.1f} ms at 262k: no growing cache to "
+               f"re-read for every token.",
+               "Inference GPUs (tokens per GPU)"),
     }
     for i, lv in enumerate(HELARCTOS_LEVERS):
         code, r = lv["code"], r9 + i
@@ -1901,8 +1939,21 @@ def build_levers(ws, wb):
         put(ws, r, 6, status, border=True, wrap=True)
         put(ws, r, 7, meaning, border=True, wrap=True)
         put(ws, r, 8, where, border=True, wrap=True)
-    for i, nm in enumerate(("SmallerModel", "FewerTokens", "TrainSpeed", "MemoryLever", "ServeThroughput")):
+    for i, nm in enumerate(("SmallerModel", "FewerTokens", "TrainSpeed", "MemoryLever", "MoreConversations",
+                            "FasterDecode")):
         _name(wb, nm, f"Levers!$C${r9 + i}")
+    # supporting input: prompt-processing (prefill) speed — the only inference cell that differs by scenario
+    r = r9 + len(HELARCTOS_LEVERS)
+    put(ws, r, 1, "", border=True)
+    put(ws, r, 2, "Supporting: prompt-processing speed vs the transformer ◆", border=True, wrap=True)
+    put(ws, r, 3, f'=IF(Scenario="Optimized kernels",E{r},D{r})', FMT_X1, SCEN_FILL, border=True, bold=True)
+    put(ws, r, 4, "=Inputs!$B$24", FMT_X1, SCEN_FILL, border=True)
+    put(ws, r, 5, "=Inputs!$B$25", FMT_X1, SCEN_FILL, border=True)
+    put(ws, r, 6, "MEASURED ×3.94 kernel speed-up banked; the full ×7.03 is a TARGET", border=True, wrap=True)
+    put(ws, r, 7, "A Helarctos kernel property, not a headline lever: prompts are ~0.2% of a transformer's time at "
+                  "262k, so it barely moves the dollars.", border=True, wrap=True)
+    put(ws, r, 8, "Inference GPUs (tokens per GPU)", border=True, wrap=True)
+    _name(wb, "PromptSpeed", f"Levers!$C${r}")
 
     r0 = LV_COMBO_ROW0
     _section(ws, r0 - 1, "HOW THE LEVERS COMBINE — one number per fleet", 8)
@@ -1911,20 +1962,24 @@ def build_levers(ws, wb):
          "H1 × H2 × H3. Training clusters are sized to GPU-hours, so the training fleet can shrink by this "
          "much for the same training programme.", "TrainLever"),
         ("Inference: memory per conversation falls by", "=MemoryLever", FMT_DIV, "H4", None),
-        ("Inference: compute per token falls by", "=ServeThroughput", FMT_X0,
-         "H5 (inference cost doesn't depend on model size)", "ServeComputeLever"),
+        ("Inference: decode tokens per GPU rise by", "=MoreConversations*FasterDecode", FMT_X0,
+         "H5 × H6: more conversations per GPU, each decoded faster", "DecodeLever"),
+        ("Inference: tokens per GPU, including prompt processing", "=Inputs!$B$27", FMT_X0,
+         "H5 × H6 with the prompts added back at the supporting prompt-processing speed (inference cost doesn't "
+         "depend on model size)", "ServeComputeLever"),
         ("Inference: GPUs needed fall by", "=MIN(MemoryLever,ServeComputeLever)", FMT_X0,
-         '="The smaller of H4 and H5. A GPU is bought whole — memory and compute together — so the fleet covers '
-         'whichever runs out first. Multiplying them ("&TEXT(MemoryLever,"#,##0")&" × "&TEXT(ServeComputeLever,'
-         '"#,##0")&") would be wrong."', "ServeGPULever"),
+         '="The smaller of memory (H4) and tokens per GPU. A GPU is bought whole — memory and compute together — '
+         'so the fleet covers whichever runs out first: here tokens per GPU binds, so faster decode counts. '
+         'Multiplying them ("&TEXT(MemoryLever,"#,##0")&" × "&TEXT(ServeComputeLever,"#,##0")&") would be '
+         'wrong."', "ServeGPULever"),
         ("For reference: technical tabs' blended cut", "=Inputs!$B$20", FMT_X0,
          "The technical appendix (Totals, company tabs) prices memory (~60% of a GPU's cost) and compute "
          "(~40%) separately and blends them. Same chip bill, within ~2% on FY2026.", None),
     ]
     for i, (lab, f, fmt, note, nm) in enumerate(combos):
         r = r0 + i
-        put(ws, r, 2, lab, bold=i < 4, border=True, wrap=True)
-        put(ws, r, 3, f, fmt, CALC_FILL, border=True, bold=i < 4)
+        put(ws, r, 2, lab, bold=i < 5, border=True, wrap=True)
+        put(ws, r, 3, f, fmt, CALC_FILL, border=True, bold=i < 5)
         _para(ws, r, note, 4, 8, note=True)
         if nm:
             _name(wb, nm, f"Levers!$C${r}")
@@ -1983,6 +2038,9 @@ def build_levers(ws, wb):
         "Only AI chips and the power they draw are counted. The buildings, power infrastructure and networking "
         "around them would shrink too — upside, not in these numbers.",
         "Training is priced on GPU-hours only; no memory credit is taken on training clusters.",
+        "H4 (×2,032) is measured on our test model; for frontier-size models with grouped-query attention the "
+        "estimate is ~×208, where memory would bind again (about −$0.5B on FY2026). H6 is an estimate until the "
+        "aggregate-decode receipt lands (×2.6 measured on our older kernels).",
         "H1 is a projection: quality trends measured up to 663M parameters, extended to ~1T dense-equivalent — "
         "about what today's 5–6T-total mixture-of-experts flagships (Grok 5 at 6T, Kimi K3 at 2.8T) amount to.",
         "The saving is spend no longer needed for the same AI output; firms will likely reinvest it. Cash basis; "
@@ -2050,9 +2108,9 @@ def _detail_table(ws, r0, year_col, label):
 
 
 # Value Bridge anchors (fixed so Summary and the charts can point at them)
-VB_RESULT_ROW = 38                      # Training / Inference result rows 38-39
-VB_LADDER_ROW = 47                      # one-lever-at-a-time table header row
-VB_DETAIL26_ROW = 72
+VB_RESULT_ROW = 40                      # Training / Inference result rows 40-41
+VB_LADDER_ROW = 49                      # one-lever-at-a-time table header row
+VB_DETAIL26_ROW = 74
 VB_DETAIL25_ROW = VB_DETAIL26_ROW + len(COMPANIES) + 4
 
 
@@ -2117,29 +2175,36 @@ def build_value_bridge(ws):
         note='="Labs size training clusters to the GPU-hours their runs need: ~"&TEXT(TrainLever,"0")&"× fewer '
              'GPU-hours means a cluster ~"&TEXT(TrainLever,"0")&"× smaller for the same programme."')
 
-    _section(ws, 27, "STEP 4 — INFERENCE: less memory per conversation → more conversations per GPU → fewer GPUs", 9)
+    _section(ws, 27, "STEP 4 — INFERENCE: small memory → more conversations per GPU, each decoded faster → fewer "
+                     "GPUs", 9)
     row(28, "Inference fleet capex today", "=B14")
     lever(29, "H4", "=MemoryLever", FMT_DIV, "Fixed-size state instead of a memory that grows with every token.")
-    lever(30, "H5", "=ServeComputeLever", FMT_X0, "Many more conversations — and tokens — per GPU.")
-    put(ws, 31, 1, "= Inference GPUs needed fall by (the smaller of H4 and H5)", bold=True, wrap=True)
-    put(ws, 31, 3, "=ServeGPULever", FMT_X0, CALC_FILL, border=True, bold=True)
-    _para(ws, 31, "A GPU is bought whole — memory and compute together — so the fleet covers whichever runs out "
-                  "first. At long context a transformer runs out of memory first.", 4, 9, note=True)
-    put(ws, 32, 1, "Inference fleet needed with Helarctos")
-    put(ws, 32, 2, "=B28/C31", FMT_B, CALC_FILL, border=True)
-    row(33, "Inference capex avoided", "=B28-B32")
-    row(34, "+ power & operations those GPUs would have drawn", f"={T['K']}", FMT_B1,
+    lever(30, "H5", "=MoreConversations", FMT_X0, "64 resident 262k-token conversations per GPU where a "
+                                                  "transformer fits 1.")
+    lever(31, "H6", "=FasterDecode", FMT_X1, "Each next token in 2.5 ms instead of ~15.6 ms (estimate).")
+    put(ws, 32, 1, "Tokens per GPU, H5 × H6 with prompt processing added back")
+    put(ws, 32, 3, "=ServeComputeLever", FMT_X0, CALC_FILL, border=True)
+    _para(ws, 32, "Prompts are ~0.2% of a transformer's time at 262k (supporting prompt-processing speed, Levers "
+                  "tab).", 4, 9, note=True)
+    put(ws, 33, 1, "= Inference GPUs needed fall by (the smaller of memory and tokens per GPU)", bold=True, wrap=True)
+    put(ws, 33, 3, "=ServeGPULever", FMT_X0, CALC_FILL, border=True, bold=True)
+    _para(ws, 33, "A GPU is bought whole — memory and compute together — so the fleet covers whichever runs out "
+                  "first. Here tokens per GPU binds, so faster decode (H6) counts in the dollars.", 4, 9, note=True)
+    put(ws, 34, 1, "Inference fleet needed with Helarctos")
+    put(ws, 34, 2, "=B28/C33", FMT_B1, CALC_FILL, border=True)
+    row(35, "Inference capex avoided", "=B28-B34")
+    row(36, "+ power & operations those GPUs would have drawn", f"={T['K']}", FMT_B1,
         note="Power scales with the fleet.")
-    row(35, "INFERENCE SAVING (capex + power)", "=B33+B34", bold=True, fill=KPI_FILL)
+    row(37, "INFERENCE SAVING (capex + power)", "=B35+B36", bold=True, fill=KPI_FILL)
 
     R = VB_RESULT_ROW
     _section(ws, R - 1, "RESULT — FY2026", 9)
     row(R, "Training (capex + power)", "=B25")
-    row(R + 1, "Inference (capex + power)", "=B35")
+    row(R + 1, "Inference (capex + power)", "=B37")
     row(R + 2, "SPEND HELARCTOS MAKES UNNECESSARY, per year", f"=B{R}+B{R + 1}", bold=True, fill=KPI_FILL,
         note="Ties to the detail table total below.")
     row(R + 3, "…as a share of all AI spend", f"=B{R + 2}/{T['M']}", FMT_P, bold=True)
-    row(R + 4, "…as a share of the AI-chip bill", "=(B23+B33)/B7", FMT_P)
+    row(R + 4, "…as a share of the AI-chip bill", "=(B23+B35)/B7", FMT_P)
     row(R + 5, "Net AI cash result with Helarctos", f"=B10+B{R + 2}", bold=True)
     row(R + 6, "Value of the yearly saving, capitalized (÷ discount rate)", f"=B{R + 2}/Inputs!$B$6/1000", FMT_T,
         note="Simple perpetuity at the Inputs discount rate (6%).")
@@ -2152,7 +2217,7 @@ def build_value_bridge(ws):
     steps = [
         ("Today's transformer fleet", "1", "1", "1"),
         ("Smaller model trained on fewer tokens — training (H1–H3)", "=TrainLever", "1", "1"),
-        ("+ Fixed-size memory: many more conversations per GPU — inference (H4, H5)", "=TrainLever",
+        ("+ Fixed-size memory, more conversations per GPU, faster decode — inference (H4–H6)", "=TrainLever",
          "=MemoryLever", "=ServeComputeLever"),
     ]
     TF, SF, ACC, OPX = T["D"], T["E"], T["B"], T["I"]
@@ -2168,7 +2233,8 @@ def build_value_bridge(ws):
     note_r = L + 1 + len(steps)
     _para(ws, note_r,
           "Training savings come from the smaller model (fewer parameters AND fewer tokens compound). Inference "
-          "savings come from fixed-size memory, which lets each GPU hold many more long conversations. Each "
+          "savings come from fixed-size memory, which lets each GPU hold many more long conversations, each "
+          "decoded faster. Each "
           "fleet then shrinks by ~94–99%: bigger multiples can't add much, because a cost can only fall to zero "
           "once. That is why this workbook reports dollars, not multiples.", 1, 9, note=True)
     ch = BarChart()
@@ -2202,9 +2268,14 @@ WHY_IT_MATTERS = {
     "Smaller model for the same quality": "The biggest Helarctos-specific assumption: it drives the whole training "
         "saving (smaller model × fewer tokens). A projection from models up to 663M parameters to ~1T "
         "dense-equivalent (today's 5–6T mixture-of-experts flagships). High case: a 5T dense model.",
-    "Conversations served per GPU": "Only matters if it collapses: inference GPUs stay limited by memory (÷100) "
-        "as long as this stays above ×100; the estimate is ×368 at 262k.",
-    "Memory per conversation": "Sets how far inference GPUs shrink. Measured ×2,000 at 262k; ÷100 is our cap.",
+    "More conversations per GPU": "How many long conversations one GPU holds at once (64 vs the transformer's 1, "
+        "measured). Small effect: inference GPUs already shrink by ~99.7%, so even ×16 costs under $2B.",
+    "Faster decode per token": "Per-token decode speed-up (×6.3 estimate after the kernel edits; ×2.6 measured on "
+        "our older kernels). With memory no longer the limit it counts in the dollars — but only ~$1B across the range.",
+    "Memory per conversation": "Measured ×2,032 at 262k on our test model. Caveat: for frontier-size models with "
+        "grouped-query attention the frontier-geometry estimate is ~÷208, where memory would bind again (≈ −$0.5B).",
+    "Average conversation length": "Shorter conversations shrink both the memory advantage and tokens per GPU "
+        "(×48 at 32k). The workbook is fixed at 262k; the app's sidebar lets you change it.",
     "Data-center share of capex": "Share of capex that goes into data centres rather than offices and other "
         "assets. From 10-K/10-Q property notes (93–98%; Amazon's AWS share 68–76%).",
     "Training speed per token": "Set to ×1 (about the same). Small effect: the smaller model already removes "
@@ -2318,8 +2389,8 @@ def build_what_matters(ws):
 
 # ---- Summary ----------------------------------------------------------------------
 LEGEND = [
-    ("H1–H5  Helarctos lever", "lever",
-     "One of the five things the Helarctos architecture changes. Every other input is market, company or "
+    ("H1–H6  Helarctos lever", "lever",
+     "One of the six things the Helarctos architecture changes. Every other input is market, company or "
      "modelling data."),
     ("Assumption", INPUT_FILL, "A market, company or modelling assumption you can edit (not about Helarctos)."),
     ("Disclosed data", DATA_FILL, "From company filings or market data."),
@@ -2382,7 +2453,7 @@ def build_summary(ws, d26, d25):
     _section(ws, 15, "WHERE THE FY2026 SAVING COMES FROM — and the Helarctos levers behind it", 8)
     _thead(ws, 16, ["Fleet / Helarctos lever", "$B per year", "Share", "Lever", "How it works", "", "", ""])
     ws.merge_cells("E16:H16")
-    tr = 24
+    tr = 25
     fleets = [
         (17, "Training fleet (capex + power)", ("F", "J"), "=TrainLever", FMT_X1,
          '="H1 × H2 × H3 = ~"&TEXT(TrainLever,"0")&"× fewer GPU-hours per training run, so training clusters can '
@@ -2393,12 +2464,16 @@ def build_summary(ws, d26, d25):
           ("H2", "=FewerTokens", FMT_X2, "Compute-optimal training needs data in proportion to model size."),
           ("H3", "=TrainSpeed", FMT_X2, "About the same as a transformer at the same size — no credit taken.")]),
         (21, "Inference fleet (capex + power)", ("G", "K"), "=ServeGPULever", FMT_X0,
-         '="A GPU is bought whole, so the inference fleet shrinks by the smaller of H4 and H5: ~"'
+         '="Tokens per GPU rise ~"&TEXT(ServeComputeLever,"0")&"× (H5 × H6, with prompts added back). A GPU is '
+         'bought whole, so the inference fleet shrinks by the smaller of memory and tokens per GPU: ~"'
          '&TEXT(ServeGPULever,"0")&"× fewer GPUs, plus the power they would draw."',
          [("H4", "=MemoryLever", FMT_DIV,
-           "Fixed-size state instead of a memory that grows with every token (measured ×2,000 at 262k; capped)."),
-          ("H5", "=ServeComputeLever", FMT_X0,
-           "Tokens served per GPU at the same model size, 262k-token average conversation (estimate).")]),
+           "Fixed-size state instead of a memory that grows with every token (measured ×2,032 at 262k on our "
+           "test model)."),
+          ("H5", "=MoreConversations", FMT_X0,
+           "64 resident 262k-token conversations per GPU where a transformer fits 1 (measured)."),
+          ("H6", "=FasterDecode", FMT_X1,
+           "Each next token in 2.5 ms instead of ~15.6 ms (estimate; ×2.6 measured on older kernels).")]),
     ]
     for r, lab, cols, lf, lfmt, how, levers in fleets:
         put(ws, r, 1, lab, bold=True, border=True)
@@ -2416,17 +2491,17 @@ def build_summary(ws, d26, d25):
                 key_cell(c)
             _para(ws, rr, text, 5, 8, note=True)
     put(ws, tr, 1, "TOTAL", bold=True, border=True, fill=SUB_FILL)
-    put(ws, tr, 2, "=B17+B21", FMT_B, SUB_FILL, border=True, bold=True)
+    put(ws, tr, 2, "=B17+B21", FMT_B, SUB_FILL, border=True, bold=True)  # training + inference
     put(ws, tr, 3, "=C17+C21", FMT_P, SUB_FILL, border=True, bold=True)
     put(ws, tr, 4, None, fill=SUB_FILL, border=True)
     _para(ws, tr, "Step-by-step build and the one-lever-at-a-time view: Value Bridge tab.", 5, 8, note=True)
 
-    _section(ws, 26, "BY COMPANY — FY2026, $B per year", 8)
-    _thead(ws, 27, ["Company", "AI spend", "Training saving", "Inference saving", "Total saving",
+    _section(ws, 27, "BY COMPANY — FY2026, $B per year", 8)
+    _thead(ws, 28, ["Company", "AI spend", "Training saving", "Inference saving", "Total saving",
                     "% of AI spend", "Net AI today", "Net AI with Helarctos"], height=32)
     base = VB_DETAIL26_ROW + 2
     for i, c in enumerate(COMPANIES + [None]):
-        r = 28 + i
+        r = 29 + i
         src_r = base + i
         tot = c is None
         put(ws, r, 1, c["name"] if c else f"TOTAL ({len(COMPANIES)})", border=True, bold=tot,
@@ -2436,13 +2511,14 @@ def build_summary(ws, d26, d25):
             put(ws, r, j, "=" + "+".join(f"{VB}!{col}{src_r}" for col in cols), fmt,
                 SUB_FILL if tot else CALC_FILL, border=True, bold=tot or j == 5)
 
-    r = 28 + len(COMPANIES) + 2
+    r = 29 + len(COMPANIES) + 2
     _section(ws, r, "WHY ~99% OF THE CHIP BILL — NOT \"1,000×\"", 8)
     _para(ws, r + 1,
           '="Multiples don\'t multiply. A GPU is bought whole, so the inference fleet shrinks by whichever need '
-          'falls least (÷"&TEXT(MemoryLever,"#,##0")&" memory), not by "&TEXT(MemoryLever,"#,##0")&" × "'
-          '&TEXT(ServeComputeLever,"#,##0")&". Cutting a fleet "&TEXT(ServeGPULever,"#,##0")&"× already removes '
-          '99% of it; bigger multiples only move the last 1%. So the dollars are set by how much these firms spend '
+          'falls least (×"&TEXT(ServeGPULever,"#,##0")&"), never by memory × tokens per GPU ("'
+          '&TEXT(MemoryLever,"#,##0")&" × "&TEXT(ServeComputeLever,"#,##0")&"). Cutting a fleet "'
+          '&TEXT(ServeGPULever,"#,##0")&"× already removes over 99% of it; bigger multiples only move the last '
+          'fraction of a percent. So the dollars are set by how much these firms spend '
           'on chips — which is why this workbook reports dollars."', 1, 8, height=48)
 
     r += 3
@@ -2463,7 +2539,7 @@ def build_summary(ws, d26, d25):
     guide = [
         ("Summary", "This page: the headline, where the saving comes from, and by company."),
         ("Value Bridge", "Step by step from AI spend to the saving; the levers switched on one at a time."),
-        ("Levers", "The five Helarctos levers, how sure we are of each, the scenario switch, and the market & "
+        ("Levers", "The six Helarctos levers, how sure we are of each, the scenario switch, and the market & "
                    "company data the front tabs use."),
         ("What Matters", "Which inputs move the answer and by how much — Helarctos levers vs market data."),
         (" / ".join(c["name"] for c in COMPANIES), "Each company's capex build from its filings."),
@@ -2594,6 +2670,15 @@ def main() -> None:
     assert where["Training share of the chip fleet"] == \
         f"Levers C{LV_COMPANY_ROW0}:C{LV_COMPANY_ROW0 + len(COMPANIES) - 1}", where
     assert where["Training speed per token"] == f"Levers D{LV_LEVER_ROW0 + 2}/E{LV_LEVER_ROW0 + 2}", where
+    # ★ flags on the levers must follow the >= $10B rule of the sensitivity table
+    swing = {}
+    for name, _, code, _, lo, _, hi in sensitivity_table():
+        for c in (code.split("+") if code else []):
+            swing[c] = max(swing.get(c, 0.0), abs(lo), abs(hi))
+    for lv in HELARCTOS_LEVERS:
+        if lv["code"] == "H2":  # tied to H1 (same value); the ★ sits on H1
+            continue
+        assert lv["high_impact"] == (swing.get(lv["code"], 0.0) >= 10.0), (lv["code"], swing)
 
     for ws in [summ, vb, lev, wm] + list(sheets.values()):
         center_rows(ws)

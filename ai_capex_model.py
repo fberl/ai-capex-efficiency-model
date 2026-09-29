@@ -136,8 +136,8 @@ mem_factor, which is unchanged.
 
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
-    "mem_factor": 100,  # memory reduction (x) — conservative vs the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 368.07,  # FLOPs (inference) reduction (x) — 2026-09-29 (3) user ruling: inference cost does NOT scale with model size, so the equal-quality parameter ratio (x4.22) now applies to TRAINING only and this lever is the inference throughput per GPU alone, at a 262k-token average context (Current kernels; Optimized = x381.9). Was x1,552.72 = x368.07 x 4.22. Earlier history: SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
+    "mem_factor": 2032,  # memory reduction (x) — H4. 2026-09-29 (4) user ruling: the MEASURED ratio at 262k on our test model (was the conservative /100 cap) — the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
+    "flop_factor": 368.0748334211694,  # FLOPs (inference) reduction (x) = inference_throughput(H5, H6, prefill, prompt share) — 2026-09-29 (4): split into H5 x64 more conversations per GPU and H6 x6.25 faster decode, full precision (was 368.07). Earlier: 2026-09-29 (3) user ruling: inference cost does NOT scale with model size, so the equal-quality parameter ratio (x4.22) now applies to TRAINING only and this lever is the inference throughput per GPU alone, at a 262k-token average context (Current kernels; Optimized = x381.9). Was x1,552.72 = x368.07 x 4.22. Earlier history: SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -1558,6 +1558,64 @@ assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 0.05, (
 )
 
 
+# ---- the inference lever, split into H5 x H6 (2026-09-29 (4) user ruling) --------
+# Tokens served per GPU vs the transformer, at the same model size:
+#   H5 more conversations per GPU  = our resident streams / the transformer's
+#                                    (64 vs 1 at 262k: MEASURED, a 2nd transformer
+#                                    stream OOMs; our 64 is a grid cap)
+#   H6 faster decode per token     = transformer per-token decode time / ours
+#                                    (15.6 ms vs the 2.5 ms post-kernel ESTIMATE;
+#                                    MEASURED ~x2.6 on the older kernels)
+#   PF prompt-processing (prefill) speed vs the transformer — the ONLY inference
+#      input that differs by scenario (banked x3.936 vs the full x7.03 programme)
+#   rq the transformer's prompt time / its decode time per generated token
+#      (in:out x decode rate / prefill rate; ~0.23% at 262k)
+# inference throughput = (1 + rq) / (rq / PF + 1 / (H5 x H6)); it reproduces the
+# campaign_landed_flop_lever accounting exactly (asserted below).
+def decode_levers(ctx_tokens=None):
+    """(H5, H6) at a context: H5 = our resident streams per GPU / the transformer's
+    (at its KV ceiling), H6 = the rest of the decode-throughput ratio, i.e. the
+    per-token decode speed-up. H5 x H6 = our decode tokens/s / the transformer's."""
+    c = CAMPAIGN_LANDED_20260831
+    ctx = float(c["context_tokens"] if ctx_tokens is None else ctx_tokens)
+    own_tps = c["streams_per_gpu"] * 1000.0 / c["decode_own_ms_per_token"]
+    tf_streams = max(1, serving_economics(ctx)["tf_streams_per_gpu"])
+    h5 = c["streams_per_gpu"] / tf_streams
+    return h5, own_tps / decode_tokens_per_s_per_gpu("transformer", ctx) / h5
+
+
+def prefill_advantage(kernels="current", ctx_tokens=None):
+    """PF: our prompt-processing (prefill) throughput / the transformer's at a
+    context. 'current' = banked x3.936 kernel speed-up; 'mature' = full x7.03."""
+    ctx = float(CAMPAIGN_LANDED_20260831["context_tokens"] if ctx_tokens is None else ctx_tokens)
+    k = KERNEL_SPEEDUP_REALIZED_20260824 if kernels == "current" else CEILING_PREFILL_SPEEDUP
+    return prefill_tokens_per_s("bdm", ctx) * k / prefill_tokens_per_s("transformer", ctx)
+
+
+def prompt_time_ratio(ctx_tokens=None, in_out_ratio=None):
+    """rq: the transformer's prompt (prefill) time / its decode time, per generated token."""
+    ctx = float(CAMPAIGN_LANDED_20260831["context_tokens"] if ctx_tokens is None else ctx_tokens)
+    r = float(WORKLOAD["in_out_ratio"] if in_out_ratio is None else in_out_ratio)
+    return r * decode_tokens_per_s_per_gpu("transformer", ctx) / prefill_tokens_per_s("transformer", ctx)
+
+
+def inference_throughput(h5, h6, pf, rq):
+    """Tokens served per GPU vs the transformer (the inference compute lever,
+    g['flop_factor']) from H5, H6, the prefill advantage PF and the prompt share rq."""
+    return (1.0 + rq) / (rq / pf + 1.0 / (h5 * h6))
+
+
+H5_CONVERSATIONS, H6_DECODE = decode_levers()        # 64, x6.25 at 262k
+PF_CURRENT, PF_OPTIMIZED = prefill_advantage("current"), prefill_advantage("mature")  # x10.3, x18.4
+PROMPT_TIME_RATIO = prompt_time_ratio()              # 0.0023
+for _pf, _ref in ((PF_CURRENT, INFERENCE_LEVER_CURRENT), (PF_OPTIMIZED, INFERENCE_LEVER_OPTIMIZED)):
+    assert abs(inference_throughput(H5_CONVERSATIONS, H6_DECODE, _pf, PROMPT_TIME_RATIO) - _ref) < 1e-6, (_pf, _ref)
+del _pf, _ref
+assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 1e-6
+GLOBALS["conv_per_gpu"] = H5_CONVERSATIONS
+GLOBALS["decode_speedup"] = H6_DECODE
+
+
 def serving_context_sensitivity(contexts=(8192, 32768, 131072, 262144)):
     """How the Today/Ceiling levers and prefill's share of serving cost move
     with the fleet E[context] assumption (2026-09-01 user request).
@@ -2017,19 +2075,21 @@ def headline_family(g=None, companies=None):
 # Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
 # (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
 HEADLINE_QUOTED_20260929 = (
-    # RE-QUOTED 2026-09-29 (3): inference lever no longer scales with model
-    # size (x368, was x1,553). (2): E[context] 262k (lever
-    # x1,553) and wall power 2.3 kW/GPU. Ceiling entries removed with the
-    # Today/Ceiling pair.
-    ("fy25_spend_cut", 161.8, 0.5),          # "~$162B/yr"
-    ("fy25_capitalized", 2697.0, 50.0),      # "~$2.7T capitalized at 6%"
-    ("fy25_pct_cut", 0.446, 0.005),          # "~45% of AI spend cut"
-    ("fy25_net_arch", -122.0, 1.0),          # "burn shrinks to ~ -$122B/yr"
-    ("fy26_spend_cut", 382.9, 0.5),          # "FY26 ~$383B/yr"
-    ("fy26_capitalized", 6381.0, 50.0),      # "~$6.4T"
-    ("global_fy25_capitalized", 3371.0, 50.0),   # "global est ~$3.4T FY25"
-    ("global_fy26_capitalized", 7976.0, 50.0),   # "~$8.0T FY26"
-    ("today_reduction", 141.1, 0.5),         # "~x141 cost-weighted, memory-floored" (inference lever x368, size-independent)
+    # RE-QUOTED 2026-09-29 (4): H4 memory lever at the MEASURED x2,032 (was the
+    # /100 cap) and the inference lever split into H5 x H6 at full precision, so
+    # the inference compute lever (x368) now binds. (3): inference lever no
+    # longer scales with model size (x368, was x1,553). (2): E[context] 262k and
+    # wall power 2.3 kW/GPU. The (3) family (161.8 / 2697 / 0.446 / -122.0 /
+    # 382.9 / 6381 / 3371 / 7976 / x141.1) is RETIRED.
+    ("fy25_spend_cut", 162.7, 0.5),          # "~$163B/yr"
+    ("fy25_capitalized", 2712.0, 50.0),      # "~$2.7T capitalized at 6%"
+    ("fy25_pct_cut", 0.448, 0.005),          # "~45% of AI spend cut"
+    ("fy25_net_arch", -121.2, 1.0),          # "burn shrinks to ~ -$121B/yr"
+    ("fy26_spend_cut", 385.1, 0.5),          # "FY26 ~$385B/yr"
+    ("fy26_capitalized", 6418.0, 50.0),      # "~$6.4T"
+    ("global_fy25_capitalized", 3391.0, 50.0),   # "global est ~$3.4T FY25"
+    ("global_fy26_capitalized", 8022.0, 50.0),   # "~$8.0T FY26"
+    ("today_reduction", 723.6, 0.5),         # "~x724 cost-weighted" (memory x2,032, inference x368)
 )
 
 _HEADLINE = headline_family()
@@ -2099,21 +2159,23 @@ HELARCTOS_LEVERS = [
     {"code": "H3", "key": "train_speed", "name": "Training speed per token (same model size)",
      "fleet": "Training", "high_impact": False, "by_scenario": True},
     {"code": "H4", "key": "memory", "name": "Memory per live conversation",
-     "fleet": "Inference", "high_impact": True, "by_scenario": False},
-    {"code": "H5", "key": "serving_throughput", "name": "Conversations served per GPU",
-     "fleet": "Inference", "high_impact": True, "by_scenario": True},
+     "fleet": "Inference", "high_impact": False, "by_scenario": False},
+    {"code": "H5", "key": "conversations_per_gpu", "name": "More conversations per GPU",
+     "fleet": "Inference", "high_impact": False, "by_scenario": False},
+    {"code": "H6", "key": "faster_decode", "name": "Faster decode per token",
+     "fleet": "Inference", "high_impact": False, "by_scenario": False},
 ]
 
 
 def lever_label(code, markers=True):
-    """'H5 · Conversations served per GPU ◆★' — ◆ differs by scenario, ★ high impact."""
+    """'H3 · Training speed per token (same model size) ◆' — ◆ differs by scenario, ★ high impact."""
     lv = next(x for x in HELARCTOS_LEVERS if x["code"] == code)
     m = ("◆" if lv["by_scenario"] else "") + ("★" if lv["high_impact"] else "")
     return f"{code} · {lv['name']}" + (f" {m}" if markers and m else "")
 
 
 def value_bridge_levers(g=None, kernels="current", n_tf=None):
-    """The five audience-facing Helarctos levers + the two fleet levers they
+    """The six audience-facing Helarctos levers + the fleet levers they
     compose into. kernels: 'current' (Today) or 'mature' (Ceiling: optimized
     kernels). The serving throughput lever is read off g['flop_factor'] / s,
     so a typed-in FLOPs lever flows through."""
@@ -2126,8 +2188,11 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
         "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
         "fewer_tokens": s,            # PROJECTION (compute-optimal scaling, D ~ N)
         "train_speed": k,             # parity at the same size: no speed credit (user ruling 2026-09-29)
-        "memory": float(g["mem_factor"]),   # MEASURED x2,032 at 262k, capped at /100
-        "serving_throughput": serve_tp,     # ESTIMATE (decode 2.5 ms x 64 streams) x MEASURED prefill
+        "memory": float(g["mem_factor"]),   # H4: MEASURED x2,032 at 262k (test model)
+        "conversations_per_gpu": float(g.get("conv_per_gpu", H5_CONVERSATIONS)),  # H5: 64 vs 1, MEASURED
+        "faster_decode": float(g.get("decode_speedup", H6_DECODE)),              # H6: ESTIMATE (2.5 ms/token)
+        "prefill_speed": PF_OPTIMIZED if kernels == "mature" else PF_CURRENT,    # supporting, differs by scenario
+        "serving_throughput": serve_tp,     # = inference_throughput(H5, H6, prefill, prompt share)
         "train_lever": s * s * k,
         "serving_compute_lever": serve_tp,
         # whole-GPU serving lever: the binding (smaller) of memory and compute
@@ -2202,7 +2267,7 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
         ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0)),
         ("Smaller model trained on fewer tokens (training)", dict(train_lever=lv["train_lever"], memory=1.0,
                                                                   serving_compute_lever=1.0)),
-        ("+ Fixed-size memory: many more conversations per GPU (inference)", dict(train_lever=lv["train_lever"], memory=lv["memory"],
+        ("+ Fixed-size memory, more conversations per GPU, faster decode (inference)", dict(train_lever=lv["train_lever"], memory=lv["memory"],
                                                      serving_compute_lever=lv["serving_compute_lever"])),
     ]
     out, prev = [], 0.0
@@ -2240,6 +2305,19 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
                 v = list(c[y]); v[i] = min(1.0, v[i] * f); c[y] = tuple(v)
         return cs
 
+    def _tp(h5=None, h6=None):
+        lv0 = value_bridge_levers(g)
+        return inference_throughput(lv0["conversations_per_gpu"] if h5 is None else h5,
+                                    lv0["faster_decode"] if h6 is None else h6,
+                                    lv0["prefill_speed"], PROMPT_TIME_RATIO)
+
+    def _ctx_over(ctx):
+        """Shorter average conversations: less memory advantage, fewer tokens per GPU."""
+        h5, h6 = decode_levers(ctx)
+        tp = inference_throughput(h5, h6, prefill_advantage("current", ctx), prompt_time_ratio(ctx))
+        return {"memory": float(g["mem_factor"]) * ctx / CAMPAIGN_LANDED_20260831["context_tokens"],
+                "serving_compute_lever": tp}
+
     base = run()
     rows = [
         ("Server share of AI capex", "company tabs, row 5", "", "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
@@ -2247,14 +2325,19 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
         ("Smaller model for the same quality", "Inputs B23", "H1+H2", "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0}),
          "×5.7 (5T dense)", run(over={"smaller_model": param_matching_gain(5e12),
                                         "fewer_tokens": param_matching_gain(5e12)})),
-        ("Conversations served per GPU", "Inputs B24/B25", "H5", "×12 (8k context)", run(over={"serving_compute_lever": 12.0}),
-         "×3,000", run(over={"serving_compute_lever": 3000.0})),
-        ("Memory per conversation", "Inputs B2", "H4", "÷10", run(over={"memory": 10.0}), "÷1,000", run(over={"memory": 1000.0})),
+        ("More conversations per GPU", "Inputs B28", "H5", "×16", run(over={"serving_compute_lever": _tp(h5=16.0)}),
+         "×128", run(over={"serving_compute_lever": _tp(h5=128.0)})),
+        ("Faster decode per token", "Inputs B29", "H6", "×2.6 (measured, older kernels)",
+         run(over={"serving_compute_lever": _tp(h6=2.6)}), "×12", run(over={"serving_compute_lever": _tp(h6=12.0)})),
+        ("Memory per conversation", "Inputs B2", "H4", "÷208 (frontier-model geometry)",
+         run(over={"memory": fleet_memory_lever(262144)}), "÷8,000", run(over={"memory": 8000.0})),
+        ("Average conversation length", "fixed at 262k (app: sidebar)", "", "32k",
+         run(over=_ctx_over(32768)), "128k", run(over=_ctx_over(131072))),
         ("Data-center share of capex", "company tabs, row 4", "", "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
         ("Training speed per token", "Levers D11/E11", "H3", "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
         ("Electricity rate", "Inputs B9", "", "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
         ("Wall power per GPU", "Inputs B8", "", "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
-        ("Training share of the chip fleet", "Levers C34:C39", "", "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
+        ("Training share of the chip fleet", "Levers C37:C42", "", "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
          "all 60%", run(shares={c["name"]: 0.6 for c in companies})),
         ("Memory share of GPU cost", "Inputs B4", "", "40%", run(gg=dict(g, mem_share=0.4)), "80%", run(gg=dict(g, mem_share=0.8))),
     ]
