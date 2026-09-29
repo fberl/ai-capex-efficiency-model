@@ -105,17 +105,17 @@ Sensitivity, CostLadder, ServingTraining, Evidence, Methodology).
 
   | Step (FY2026, Today) | Spend cut |
   |---|---|
-  | Smaller model for the same quality | ~$209B |
-  | + Fixed-size memory per conversation | ~$352B |
-  | + Many more conversations per GPU | ~$375B |
-  | + Faster training on long documents | ~$379B |
+  | Smaller model for the same quality | ~$208B |
+  | + Fixed-size memory per conversation | ~$350B |
+  | + Many more conversations per GPU | ~$373B |
+  | + Faster training on long documents | ~$377B |
 
 - **Levers**: the five Helarctos levers in plain English. Each shows how sure we are of it
   (MEASURED / PROJECTED / ESTIMATE), what it means, and which part of the bill it shrinks. The tab
   also holds the Today / Optimized-kernels switch and the per-company training shares.
 
 The bridge prices training on its own GPU-hour lever and takes no memory credit on training.
-It lands within ~1% of the technical Totals tab ($379B vs $382B FY26), which prices the whole fleet
+It lands within ~1% of the technical Totals tab ($377B vs $380B FY26), which prices the whole fleet
 on the serving levers. `value_bridge()` in `ai_capex_model.py` is the Python twin of these tabs.
 With every training share at 0 it reproduces the Totals number exactly, and that is asserted at import.
 

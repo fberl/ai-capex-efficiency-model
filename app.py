@@ -48,7 +48,7 @@ from ai_capex_model import (GLOBALS, COMPANIES, MEASURED, SERVING,
                             headline_with_training, TRAINING_CURRICULA,
                             KV_MB_PER_TOKEN_PER_STREAM,
                             value_bridge, value_bridge_levers, savings_ladder,
-                            VALUE_BRIDGE_CURRICULUM)
+                            VALUE_BRIDGE_CURRICULUM, INFRA_SHARE_BASIS)
 
 st.set_page_config(page_title="AI Capex Efficiency", layout="wide")
 
@@ -293,7 +293,7 @@ def company_tab(c, g):
     section(f"{name} — inputs")
     show_table(CB, [
         [("Total capex ($B)", ""), (n1(t25), "g"), (n1(t26), "y"), ("FY25 disclosed; FY26 guide/est", "")],
-        [("Infra / data-center share", ""), (pct(i25), "y"), (pct(i26), "y"), ("strips non-AI (Amazon = AWS)", "")],
+        [("Infra / data-center share", ""), (pct(i25), "y"), (pct(i26), "y"), (INFRA_SHARE_BASIS.get(name, "strips non-datacenter capex"), "")],
         [("Server / short-lived share", ""), (pct(s25), "y"), (pct(s26), "y"), ("CFO-disclosed", "")],
         [("Accelerator share (within servers)", ""), (pct(a25), "y"), (pct(a26), "y"), ("BOM teardown ~67–80%", "")],
         [("Market cap ($B)", ""), (n0(c["mcap"]), "g"), ("", ""), ("approx market data", "")],
@@ -969,7 +969,7 @@ baseline.
 
 **Per company.** `total capex (disclosed) × infra share × server share × accelerator share`
 → accelerator capex → fleet → energy/opex → efficient version → value (FY2025 actual + FY2026 estimate).
-Infra share strips non-AI (Amazon = AWS ~68%); server share is CFO-disclosed; accelerator-within-server
+Infra (data-center) share comes from the 10-K/10-Q property & equipment and segment notes (Amazon = AWS, 68–76%); server share is CFO-disclosed; accelerator-within-server
 is ~67–80% from BOM teardowns.
 
 **Totals & global.** The named firms roll up live (no double-count). The **GLOBAL** row grosses the
@@ -980,10 +980,11 @@ China, neoclouds, xAI, sovereign & enterprise).
 spend cut. All six firms lose money on AI today. The *Datacenter scaling factor* toggles how much of the
 non-accelerator datacenter shrinks too (0 = conservative; ~0.7 ≈ breakeven; 1 = flips positive).
 
-**Key results.** FY25: ~\$370B AI capex vs ~\$79B AI revenue → ~−\$295B/yr burn. At the re-based levers
+**Key results.** FY25: ~\$357B AI capex vs ~\$79B AI revenue → ~−\$283B/yr burn. At the re-based levers
 (2026-09-01: banked kernels + the aggregate-decode estimate; ~×154 cost-weighted, memory-floored) the
-named spend cut is **~\$166B FY25** (~\$2.8T capitalized at the 6% rate; global est ~\$3.5T FY25) and
-**~\$382B on FY2026 guidance** (~\$6.4T / global ~\$8.0T). Today and Ceiling are within rounding of each
+named spend cut is **~\$161B FY25** (~\$2.7T capitalized at the 6% rate; global est ~\$3.3T FY25) and
+**~\$380B on FY2026 guidance** (~\$6.3T / global ~\$7.9T). Data-center shares are from the 10-K/10-Q
+property & equipment notes (2026-09-29). Today and Ceiling are within rounding of each
 other in dollars: the cut is `accelerator capex × (1 − 1/reduction)` and it saturates; the underlying
 capex, shares and revenue never move.
 
@@ -1050,7 +1051,7 @@ def _colored_bars(labels, values, colors, horizontal=False):
                                    dx=4 if horizontal else 0, dy=0 if horizontal else -4,
                                    color="#52514e").encode(lab, val, text=alt.Text("value:Q", format="$,.0f"))
     st.altair_chart((bars + text).properties(height=46 * len(labels) if horizontal else 320),
-                    use_container_width=True)
+                    width="stretch")
 
 
 def _train_shares():

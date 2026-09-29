@@ -157,9 +157,9 @@ GLOBALS = {
 COMPANIES = [
     {
         "name": "Microsoft",
-        "fy25": (88.0, 1.00, 0.50, 0.75),
-        "fy26": (190, 1.00, 0.67, 0.75),
-        "fy27": (298, 1.00, 0.67, 0.75),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
+        "fy25": (88.0, 0.97, 0.50, 0.75),  # infra 0.97 FILING: FY25 10-K P&E note, leasehold improvements $2.5B of $86.6B gross additions are the only non-datacenter class
+        "fy26": (190, 0.97, 0.67, 0.75),  # infra 0.97 FILING: FY26 10-K P&E note, leasehold $4.2B of $133.1B gross additions
+        "fy27": (298, 0.97, 0.67, 0.75),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 3700,
         "ai_rev": (30, 50, 75),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex incl leases ~$88B [DISCLOSED proxy]; FY26 ~$190B CY26 guide (Jul'26 restated "
@@ -186,9 +186,9 @@ COMPANIES = [
     },
     {
         "name": "Alphabet",
-        "fy25": (91.4, 1.00, 0.60, 0.67),
-        "fy26": (185, 1.00, 0.60, 0.67),
-        "fy27": (250, 1.00, 0.60, 0.67),  # STREET EST: analyst (Morgan Stanley) up-to-$250B 2027; company flagged a further increase
+        "fy25": (91.4, 0.93, 0.60, 0.67),  # infra 0.93 FILING: 2025 10-K P&E note, technical infrastructure +$61.8B vs office space +$2.9B and corporate/other +$1.9B (in service)
+        "fy26": (185, 0.95, 0.60, 0.67),  # infra 0.95 FILING: Q2 2026 10-Q, H1 technical infrastructure +$43.5B vs office space +$2.3B
+        "fy27": (250, 0.95, 0.60, 0.67),  # STREET EST: analyst (Morgan Stanley) up-to-$250B 2027; company flagged a further increase
         "mcap": 4250,
         "ai_rev": (25, 40, 60),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex $91.4B [DISCLOSED]; FY26 $180-190B guide. 60% servers / 40% DC (CFO). "
@@ -211,8 +211,8 @@ COMPANIES = [
     {
         "name": "Amazon",
         "fy25": (128.3, 0.68, 0.65, 0.67),
-        "fy26": (220, 0.70, 0.65, 0.67),
-        "fy27": (345, 0.70, 0.65, 0.67),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
+        "fy26": (220, 0.76, 0.65, 0.67),  # infra 0.76 FILING: Q2 2026 10-Q segment note, AWS $90.1B of $118.6B H1 net P&E additions (2025 10-K: $96.5B of $142.4B = 0.68)
+        "fy27": (345, 0.76, 0.65, 0.67),  # STREET EST: FY26 guide x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 2830,
         "ai_rev": (12, 22, 33),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 cash capex $128.3B [DISCLOSED]; FY26 raised to ~$220B (Q2'26, 2026-07-30). "
@@ -234,9 +234,9 @@ COMPANIES = [
     },
     {
         "name": "Meta",
-        "fy25": (72.2, 1.00, 0.65, 0.74),
-        "fy26": (137.5, 1.00, 0.65, 0.74),
-        "fy27": (216, 1.00, 0.65, 0.74),  # STREET EST: FY26 guide mid x1.57 (Morgan Stanley +57% 2027 path)
+        "fy25": (72.2, 0.95, 0.65, 0.74),  # infra 0.95 FILING: 2025 10-K Note 6, leasehold improvements + equipment and other $3.3B of $69.1B gross additions
+        "fy26": (137.5, 0.98, 0.65, 0.74),  # infra 0.98 FILING: Q2 2026 10-Q Note 6, $0.95B of $59.1B H1 gross additions non-datacenter
+        "fy27": (216, 0.98, 0.65, 0.74),  # STREET EST: FY26 guide mid x1.57 (Morgan Stanley +57% 2027 path)
         "mcap": 1490,
         "ai_rev": (4, 8, 12),  # fy27 = fy26 x1.5 EST
         "basis": "FY25 capex incl leases $72.2B [DISCLOSED]; FY26 $130-145B guide (mid 137.5). Accel ~74% [BOM]. "
@@ -320,6 +320,20 @@ COMPANIES = [
         ],
     },
 ]
+
+
+# Where each company's data-center (infra) share comes from (2026-09-29). Shown on
+# every company tab. FILING = computed from the 10-K/10-Q property & equipment
+# note (gross additions by asset class: offices, leasehold improvements,
+# furniture and "equipment and other" counted as NON-data-center) or segment note.
+INFRA_SHARE_BASIS = {
+    "Microsoft": "FILING: P&E note (FY25/FY26 10-K). Leasehold improvements, the only non-datacenter class, are $2.5B of $86.6B (FY25) and $4.2B of $133.1B (FY26) of gross additions -> 97%.",
+    "Alphabet": "FILING: P&E note. Technical infrastructure +$61.8B vs office space +$2.9B and corporate +$1.9B in 2025 (10-K) -> 93%; +$43.5B vs +$2.3B office in H1 2026 (10-Q) -> 95%.",
+    "Amazon": "FILING: segment note, AWS share of net P&E additions. $96.5B of $142.4B in 2025 (10-K) -> 68%; $90.1B of $118.6B in H1 2026 (10-Q) -> 76%. Strips fulfillment/logistics.",
+    "Meta": "FILING: Note 6 P&E. Leasehold improvements + equipment and other are $3.3B of $69.1B gross additions in 2025 (10-K) -> 95%; $0.95B of $59.1B in H1 2026 (10-Q) -> 98%.",
+    "Oracle": "ESTIMATE: the P&E note has no office line (buildings mix datacenters with the Nashville HQ build); capex growth is 'primarily due to the expansion of our data centers' (FY26 10-K).",
+    "SpaceX": "FILING: capex is the AI segment's own figure (S-1; Q2 2026 10-Q segment note, $23.6B in H1 2026).",
+}
 
 
 # ---- measured multi-GPU systems receipts (2026-08-07/08) -----------------------
@@ -1998,25 +2012,27 @@ def headline_family(g=None, companies=None):
 # aggregate-decode-estimate levers (Today x793 / Ceiling x816). The previous
 # family (159.0 / 2600 / 0.42 / -136 / 366 / 6100 / 3300 / 7600 / 163.7 /
 # 20.0 / 49.6 / 3.1, HEADLINE_QUOTED_20260824) is RETIRED with the x9.24 basis.
-HEADLINE_QUOTED_20260901 = (
-    ("fy25_spend_cut", 166.0, 0.5),          # "~$166B/yr"
-    ("fy25_capitalized", 2770.0, 50.0),      # "~$2.8T capitalized at 6%"
-    ("fy25_pct_cut", 0.443, 0.005),          # "~44% of AI spend cut"
-    # "burn shrinks to ~ -$129B/yr". Computes to -129.39; tolerance 1.0 allows
-    # the waterfall's rounded-components arithmetic (-295 + 166 = -129).
-    ("fy25_net_arch", -129.0, 1.0),
-    ("fy26_spend_cut", 382.0, 0.5),          # "FY26 r/r ~$382B/yr"
-    ("fy26_capitalized", 6370.0, 50.0),      # "~$6.4T"
-    ("global_fy25_capitalized", 3460.0, 50.0),   # "global est ~$3.5T FY25"
-    ("global_fy26_capitalized", 7960.0, 50.0),   # "~$8.0T FY26"
-    ("fy25_ceiling_spend_cut", 166.0, 0.5),  # Ceiling within rounding of Today (saturation)
+# RE-QUOTED 2026-09-29: data-center (infra) shares re-based on 10-K/10-Q
+# property & equipment notes and segment disclosures (Microsoft 0.97,
+# Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
+# (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
+HEADLINE_QUOTED_20260929 = (
+    ("fy25_spend_cut", 160.5, 0.5),          # "~$161B/yr"
+    ("fy25_capitalized", 2676.0, 50.0),      # "~$2.7T capitalized at 6%"
+    ("fy25_pct_cut", 0.444, 0.005),          # "~44% of AI spend cut"
+    ("fy25_net_arch", -122.0, 1.0),          # "burn shrinks to ~ -$122B/yr"
+    ("fy26_spend_cut", 380.0, 0.5),          # "FY26 r/r ~$380B/yr"
+    ("fy26_capitalized", 6331.0, 50.0),      # "~$6.3T"
+    ("global_fy25_capitalized", 3345.0, 50.0),   # "global est ~$3.3T FY25"
+    ("global_fy26_capitalized", 7914.0, 50.0),   # "~$7.9T FY26"
+    ("fy25_ceiling_spend_cut", 160.5, 0.5),  # Ceiling within rounding of Today (saturation)
     ("today_reduction", 153.7, 0.5),         # "~x154 cost-weighted, memory-floored"
     ("ceiling_reduction", 154.1, 0.5),       # "~x154"
     ("ceiling_dollar_gap_pct", 0.0, 0.25),   # "within rounding in dollars"
 )
 
 _HEADLINE = headline_family()
-for _k, _quoted, _tol in HEADLINE_QUOTED_20260901:
+for _k, _quoted, _tol in HEADLINE_QUOTED_20260929:
     assert abs(_HEADLINE[_k] - _quoted) <= _tol, (
         f"headline drift: {_k} computes to {_HEADLINE[_k]:.4f} but the decks, the app "
         f"and the workbook quote {_quoted} (tolerance {_tol}). Re-quote every surface "

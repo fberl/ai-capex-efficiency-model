@@ -43,7 +43,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from ai_capex_model import (  # single source of truth for defaults
-    GLOBALS, COMPANIES,
+    GLOBALS, COMPANIES, INFRA_SHARE_BASIS,
     CEILING_PREFILL_SPEEDUP,
     TODAY_FLOP_LEVER_20260901, CAMPAIGN_LANDED_FLOP_LEVER,
     CAMPAIGN_LANDED_20260831, DECK_DEPLOYMENT_SCALE,
@@ -370,7 +370,7 @@ def build_company(ws, name, c25, c26, mcap, ai_rev, basis, sources=()):
             i25,
             i26,
             "0%",
-            "strips non-AI (Amazon = AWS only)",
+            INFRA_SHARE_BASIS.get(name, "strips non-datacenter capex"),
             INPUT_FILL,
             INPUT_FILL,
         ),
@@ -1194,7 +1194,7 @@ def build_methodology(meth):
             False,
         ),
         (
-            "  infra share strips non-AI (Amazon AWS 68%); server share CFO-disclosed (MSFT ~50%, Google 60%); accel-within-server ~67-80% from BOM.",
+            "  infra (data-center) share from 10-K/10-Q P&E and segment notes (MSFT 97%, Alphabet 93-95%, Meta 95-98%, Amazon AWS 68-76%); server share CFO-disclosed (MSFT ~50%, Google 60%); accel-within-server ~67-80% from BOM.",
             False,
         ),
         (
@@ -1232,19 +1232,19 @@ def build_methodology(meth):
             False,
         ),
         (
-            "- Net AI FY25: 6 named firms spend ~$375B (capex+opex) vs ~$79B AI revenue = ~ -$295B/yr cash burn.",
+            "- Net AI FY25: 6 named firms spend ~$362B (capex+opex) vs ~$79B AI revenue = ~ -$283B/yr cash burn.",
             False,
         ),
         (
-            "- With our architecture: spend cut ~$166B -> burn shrinks to ~ -$129B/yr (~44% of AI spend cut).",
+            "- With our architecture: spend cut ~$161B -> burn shrinks to ~ -$122B/yr (~44% of AI spend cut).",
             False,
         ),
         (
-            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$166B/yr (~$2.8T capitalized); FY26 r/r ~$382B/yr (~$6.4T). Ceiling: within rounding of Today (the cut saturates).",
+            "- Spend-cut value (named floor, 6% discount rate): FY25 ~$161B/yr (~$2.7T capitalized); FY26 r/r ~$380B/yr (~$6.3T). Ceiling: within rounding of Today (the cut saturates).",
             False,
         ),
         (
-            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.5T, FY26 ~$8.0T capitalized. Clearly an estimate.",
+            "- GLOBAL estimate (named ~80% of world AI capex): FY25 ~$3.3T, FY26 ~$7.9T capitalized. Clearly an estimate.",
             False,
         ),
         ("", False),
