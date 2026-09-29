@@ -2056,12 +2056,19 @@ del _k, _quoted, _tol
 #                   be that much smaller -> training capex avoided =
 #                   training fleet x (1 - 1/(s*s*k)). Whole-GPU lever: no
 #                   memory credit is taken on training (conservative).
-#   serving fleet   the existing Amdahl engine: memory share / mem_factor +
-#                   compute share / (s x serving throughput per GPU).
+#   serving fleet   WHOLE GPUs (2026-09-29 user ruling: a GPU is bought as one
+#                   unit, memory and compute together). The fleet is sized to
+#                   whichever resource runs out first, so it shrinks by the
+#                   SMALLER of the memory lever and the compute lever
+#                   (s x serving throughput per GPU) -- x100 at the defaults,
+#                   i.e. the conservative memory cap binds. The technical tabs
+#                   keep the Amdahl memory/compute cost split (~x154); the
+#                   difference is under $1B on FY26.
 #
-# Cost buckets are ADDITIVE, so the dollars attribute exactly to buckets
-# (training / serving memory / serving compute / power). With every training
-# share at 0 this reproduces compute_company's spend cut exactly (asserted).
+# Fleets are ADDITIVE, so the dollars attribute exactly (training / serving /
+# power). With every training share at 0 and the serving lever set to the
+# Amdahl reduction this reproduces compute_company's spend cut exactly
+# (asserted), so the bridge and the technical engine share one base.
 # Base = accelerator capex only (dc_scale deliberately ignored here: buildings
 # and power infrastructure are upside, stated on the surfaces).
 VALUE_BRIDGE_CURRICULUM = "modern_standard"
@@ -2086,6 +2093,8 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
         "serving_throughput": serve_tp,     # ESTIMATE (decode 2.5 ms x 64 streams) x MEASURED prefill
         "train_lever": s * s * k,
         "serving_compute_lever": s * serve_tp,
+        # whole-GPU serving lever: the binding (smaller) of memory and compute
+        "serving_gpu_lever": min(float(g["mem_factor"]), s * serve_tp),
         "mem_share": float(g["mem_share"]),
     }
 
@@ -2093,13 +2102,12 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
 def _bridge_company(comp, g, year, lv, ts):
     base = compute_company(comp, g, year)
     accel = base["accel"]
-    m = lv["mem_share"]
     train_fleet = accel * ts
     serve_fleet = accel * (1.0 - ts)
     train_saved = train_fleet * (1.0 - 1.0 / lv["train_lever"])
-    serve_mem_saved = serve_fleet * m * (1.0 - 1.0 / lv["memory"])
-    serve_comp_saved = serve_fleet * (1.0 - m) * (1.0 - 1.0 / lv["serving_compute_lever"])
-    capex_avoided = train_saved + serve_mem_saved + serve_comp_saved
+    serve_lever = lv.get("serving_gpu_lever", min(lv["memory"], lv["serving_compute_lever"]))
+    serve_saved = serve_fleet * (1.0 - 1.0 / serve_lever)
+    capex_avoided = train_saved + serve_saved
     fleet_cut = capex_avoided / accel if accel else 0.0
     opex_saved = base["ai_opex"] * fleet_cut
     spend_cut = capex_avoided + opex_saved
@@ -2109,8 +2117,8 @@ def _bridge_company(comp, g, year, lv, ts):
         "ai_capex": base["ai_capex"], "accel": accel, "ai_opex": base["ai_opex"],
         "ai_rev": base["ai_rev"], "net_now": base["net_now"],
         "train_fleet": train_fleet, "serve_fleet": serve_fleet,
-        "train_saved": train_saved, "serve_mem_saved": serve_mem_saved,
-        "serve_comp_saved": serve_comp_saved, "capex_avoided": capex_avoided,
+        "train_saved": train_saved, "serve_saved": serve_saved,
+        "capex_avoided": capex_avoided,
         "fleet_cut": fleet_cut, "opex_saved": opex_saved, "spend_cut": spend_cut,
         "net_with": base["net_now"] + spend_cut,
         "pct_cut": spend_cut / spend if spend else 0.0,
@@ -2128,7 +2136,7 @@ def value_bridge(g=None, companies=None, year="fy26", levers=None, train_shares=
     rows = [_bridge_company(comp, g, year, lv, shares.get(comp["name"], c["train_share"]))
             for comp in companies]
     keys = ["ai_capex", "accel", "ai_opex", "ai_rev", "net_now", "train_fleet",
-            "serve_fleet", "train_saved", "serve_mem_saved", "serve_comp_saved",
+            "serve_fleet", "train_saved", "serve_saved",
             "capex_avoided", "opex_saved", "spend_cut", "net_with", "capitalized"]
     total = {k: sum(r[k] for r in rows) for k in keys}
     total["name"] = f"TOTAL ({len(rows)})"
@@ -2156,6 +2164,7 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
     ]
     out, prev = [], 0.0
     for label, over in steps:
+        over["serving_gpu_lever"] = min(over["memory"], over["serving_compute_lever"])
         _, t = value_bridge(g, companies, year, dict(lv, **over), train_shares)
         out.append({"step": label, "spend_cut": t["spend_cut"], "fleet_cut": t["fleet_cut"],
                     "increment": t["spend_cut"] - prev, **over})
@@ -2165,8 +2174,9 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
 
 def _check_value_bridge():
     zero = {c["name"]: 0.0 for c in COMPANIES}
+    amdahl = dict(value_bridge_levers(), serving_gpu_lever=reduction_factor(GLOBALS))
     for yr in ("fy25", "fy26"):
-        _, vb = value_bridge(year=yr, train_shares=zero)
+        _, vb = value_bridge(year=yr, train_shares=zero, levers=amdahl)
         _, ref = compute_year(GLOBALS, COMPANIES, yr)
         assert abs(vb["spend_cut"] - ref["spend_cut"]) < 1e-6, (yr, vb["spend_cut"], ref["spend_cut"])
         lad = savings_ladder(year=yr)
