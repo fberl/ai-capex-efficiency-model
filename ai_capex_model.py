@@ -4,6 +4,29 @@ Both the Excel generator (ai_capex_efficiency.py) and the Streamlit app (app.py)
 import their DEFAULTS and LOGIC from here, so the spreadsheet and the web app
 never drift.
 
+RE-BASED 2026-10-01 (three user rulings). (1) The inference SIZE FACTOR is
+REINSTATED: inference does scale with model size, so the inference lever is
+tokens per GPU at EQUAL SIZE x the fit-derived equal-quality parameter ratio
+(x4.22 at 1T) -- the same treatment training gets; 2026-09-29 (3) is reversed.
+(2) H5 and H6 now come from the 2026-10-01 per-layer decode RECEIPT
+(DECK_LAYER_CARD_20261001): the transformer at its largest measured batch whose
+full-model KV fits the card at that context, us at 256 streams; the 2.5 ms x
+64-stream aggregate-decode ESTIMATE is superseded (kept only for history inside
+CAMPAIGN_LANDED_20260831 / campaign_landed_flop_lever). (3) H3 training speed
+per token is the MEASURED curriculum-weighted step advantage (x2.22 today,
+x3.97 at the fused-kernel target), and in the value bridge the servers around
+the accelerators and the datacenters FOLLOW the blended fleet cut (they scale
+down when no longer necessary; BRIDGE_FOLLOW_20261001), with the datacenter-
+held variant as the sensitivity. (4) The decode ratios are quoted at a realistic
+~1T-DENSE FRONTIER GEOMETRY (FRONTIER_DENSE_1T_20261001: ~90 layers, anchored on
+Kimi K3 / GLM-5 depth -- MoE widens, it does not deepen; grouped-query KV at
+4 KB per token per layer), not the 24-layer d2048 comparator the receipt ran on:
+the per-layer step ratio is depth-invariant but the transformer's KV capacity
+and KV-read-bound step time are not. DECODE_GEOMETRY_OF_RECORD selects it; the
+24-layer path stays callable (geometry=None). The headline guard at the bottom
+of this file pins the bridge totals as well as the serving-only compute_year
+family.
+
 Engine: a GPU is ~60% memory / ~40% compute by cost. The cost-weighted
 reduction is 1 / (mem_share/mem_factor + compute_share/flop_factor), floored
 by the less-reduced component. Two scenarios (RE-BASED 2026-09-01, user ruling:
@@ -69,7 +92,8 @@ TRAINING RE-BASED AGAIN 2026-08-24 (2), on CONTEXT MIX. The training term used
 to be r at ONE context (2,048 tokens) applied to all of training -- the
 pessimistic corner, and never a stated assumption. Two things replace it:
 r(T) as a per-token cost model (transformer base + attn*T, ours ~flat, fitted to
-the 2k/8k cells and VALIDATED on the 32k parity cell it never saw), and
+the 2k/8k cells and VALIDATED on the 32k parity cell it never saw [that 32k
+cell was since RETIRED as a B4 occupancy artifact, 2026-08-25 (3)]), and
 training_advantage_mix(), which integrates COST over a curriculum of contexts
 rather than averaging ratios. Cost-weighted, the training term flips from a DRAG
 of x0.449 to a CONTRIBUTOR of x1.33 (modern mix) to x6.40 (frontier + long RL
@@ -137,7 +161,7 @@ mem_factor, which is unchanged.
 # ---- default global assumptions ------------------------------------------------
 GLOBALS = {
     "mem_factor": 2032,  # memory reduction (x) — H4. 2026-09-29 (4) user ruling: the MEASURED ratio at 262k on our test model (was the conservative /100 cap) — the 2026-08-14 full-model receipt (MEASURED at 262k: 64 streams on ONE GPU in 1.62 GB vs the transformer's 1 stream at 51.5 GB, a 2nd OOMs; per-stream state 25.4 MB full model vs 197 KB of KV per token of context = x2,032)
-    "flop_factor": 368.0748334211694,  # FLOPs (inference) reduction (x) = inference_throughput(H5, H6, prefill, prompt share) — 2026-09-29 (4): split into H5 x64 more conversations per GPU and H6 x6.25 faster decode, full precision (was 368.07). Earlier: 2026-09-29 (3) user ruling: inference cost does NOT scale with model size, so the equal-quality parameter ratio (x4.22) now applies to TRAINING only and this lever is the inference throughput per GPU alone, at a 262k-token average context (Current kernels; Optimized = x381.9). Was x1,552.72 = x368.07 x 4.22. Earlier history: SINGLE lever (2026-09-29 user ruling: one scenario, no Today/Ceiling pair; E[context] 262k). Same accounting as the former TODAY lever, now at 262,144 tokens: campaign_landed_flop_lever(prefill_speedup=realized). Historical note on the 128k basis follows: the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams, receipt pending) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized), cross-checked at import. CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
+    "flop_factor": 768.1651014815278,  # FLOPs (inference) reduction (x) = inference_throughput(H5, H6, prefill, prompt share) x the equal-quality size factor — 2026-10-01 (review): both per-layer steps MEASURED incl. FFN (ours = tridec + FFN mixer as written, UNCOMPILED eager modules -> ratios are a floor; theirs = flash + FFN, apples join), the transformer step at the geometry of record = flash_ffn + flash_attn_only x (4096/8192) at every context; depth / GQA cache / feasible batch MODELLED at the ~1T-dense FRONTIER geometry (FRONTIER_DENSE_1T_20261001: ~90 layers, 94.5 GiB): H5 = 256 vs 1 feasible stream at 262k, H6 = x0.74 per step, H5 x H6 = x189, x182 with the prompt share, x4.22 = x768. Was x882 (bytes-bound FFN estimate, blanket x0.5 step scaling), x1,685.3 on the 24-layer comparator. 2026-10-01 user rulings: (a) the inference SIZE FACTOR IS REINSTATED ("inference does scale with model size"), reversing 2026-09-29 (3): the lever is tokens per GPU at EQUAL SIZE (x399.5 with the prompt share; H5 x H6 = x437.6 before it) x param_matching_gain(1T) = x4.22, the same treatment training already gets; (b) H5 x H6 come from the 2026-10-01 per-layer decode RECEIPT (DECK_LAYER_CARD_20261001, battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/TABLE_plus_tridec_layer.csv): H5 = our 256 streams vs the transformer's 1 full-model-feasible stream at 262k, H6 = x1.71 per step with our FFN added as a bytes-bound estimate — replacing the 2.5 ms x 64-stream ESTIMATE (x64 x x6.25). Optimized kernels = x1,754.2 (prefill at the full x7.03). Was x368.07 (2026-09-29 (4): H5 x64 x H6 x6.25 at equal size, no size factor). Earlier history: 2026-09-29 (3) ruling that inference cost does NOT scale with model size (x368, now reversed); x1,552.72 = x368.07 x 4.22 before that; SINGLE lever (2026-09-29: one scenario, no Today/Ceiling pair; E[context] 262k); the TODAY lever (RE-BASED 2026-09-01): full-workload serving lever with the aggregate-decode ESTIMATE (2.5 ms/token x 64 streams) and prefill at the BANKED x3.936, x the equal-quality ratio x4.22 at 1T = campaign_landed_flop_lever(prefill_speedup=realized); CEILING = same at the full x7.03 maturity factor (x815.59). The pre-campaign x9.24 lever is RETIRED (kernels it was measured on no longer exist)
     "mem_share": 0.60,  # memory share of GPU cost (BOM)
     "opex_reduction_override": None,  # energy reduction: None = derive (= cost-weighted reduction); set a number to override
     "discount_rate": 0.06,  # perpetuity capitalization rate (~long-bond yield; was 0.10 until 2026-08-17)
@@ -1433,7 +1457,7 @@ COMPUTE_LEVER_20260814 = quality_matched_compute_lever()
 # targets. Every entry is a TARGET, not a receipt -- the whole scenario is an
 # ESTIMATE until the aggregate-decode measurement lands (see 'receipt_needed').
 CAMPAIGN_LANDED_20260831 = {
-    "status": "ESTIMATE — post-campaign targets; aggregate-decode receipt PENDING",
+    "status": "decode: MEASURED per layer 2026-10-01 (DECK_LAYER_CARD_20261001 — the 2.5 ms x 64-stream aggregate-decode ESTIMATE below is SUPERSEDED as the source of H5/H6 and kept for history only); training targets: still TARGET (fused-kernel 8k parity, not a receipt)",
     # Our decode after the edits: 2.5 ms wall per generated token, SINGLE stream,
     # d2048, T=2,048 -- context-flat (no KV re-read), so the per-token edge over
     # the transformer grows with context (tf: 1.58 ms + 0.051 us/token of ctx).
@@ -1547,41 +1571,314 @@ CAMPAIGN_LANDED_FLOP_LEVER = campaign_landed_flop_lever()  # = 815.6 at the 64-s
 # flop_factor; the assert keeps every surface quoting what this file computes.
 TODAY_FLOP_LEVER_20260901 = campaign_landed_flop_lever(
     prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824)
-# Inference throughput per GPU at the same model size, per scenario (the
-# campaign_landed_flop_lever values carry the equal-quality ratio; divide it
-# back out, since inference cost does not scale with model size).
-INFERENCE_LEVER_CURRENT = TODAY_FLOP_LEVER_20260901 / param_matching_gain(DECK_DEPLOYMENT_SCALE)
-INFERENCE_LEVER_OPTIMIZED = CAMPAIGN_LANDED_FLOP_LEVER / param_matching_gain(DECK_DEPLOYMENT_SCALE)
-assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 0.05, (
-    f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
-    f"inference lever {INFERENCE_LEVER_CURRENT:.4f}"
-)
+# The INFERENCE_LEVER_* constants (and the GLOBALS['flop_factor'] guard) live
+# below the H5 x H6 block since 2026-10-01: they are built from the per-layer
+# decode receipt, not from campaign_landed_flop_lever, whose 2.5 ms x 64-stream
+# estimate is history. TODAY_FLOP_LEVER_20260901 / CAMPAIGN_LANDED_FLOP_LEVER
+# stay defined for the legacy surfaces that still print them.
+
+# ---- 2026-10-01 deck layer card: the decode RECEIPT ----------------------------
+# battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/ (box 1
+# GH200, graph-captured one-token step, one layer, bf16, d2048 D_head 128):
+#   TABLE_plus_tridec_layer.csv  ours = tridec_layer (fused unit + W_o), the
+#                                transformer = flash SDPA step at a static kv
+#                                length (FFN included)
+#   ffncard_20261001T143019Z/TABLE.csv  the FFN card: our batt_ffn_mixer (norm1 +
+#                                W_in delta AS WRITTEN + residual + norm2 + FFN
+#                                relu2 + residual), its pre-folded DISCLOSURE
+#                                twin, w_o, and the transformer's flash_ffn
+#   TABLE_apples.csv / APPLES.md  the official join: bAtt layer = tridec_layer +
+#                                batt_ffn_mixer (as written); flash layer = deck
+#                                flash row incl. FFN; flash_attn_only = flash -
+#                                flash_ffn. Sums of captured medians from
+#                                SEPARATE graphs (launch gaps not counted).
+# Review fix 2026-10-01 (BLOCKER): our FFN is MEASURED, not a bytes-bound
+# estimate -- own_layer_ms below is the apples bAtt layer and is asserted
+# against TABLE_apples. Ruling: the AS-WRITTEN mixer is the served form and the
+# quoted basis; the folded mixer is recorded as DISCLOSURE, not used.
+# ASYMMETRY (user, 2026-10-01): our batt_ffn_mixer rows are UNCOMPILED -- "torch
+# eager modules, graph-captured, cuBLAS GEMV, no tune bank" (norms + delta read
+# + FFN as separate kernels) -- while the transformer's attention step is a
+# fused flash kernel. The as-written mixer (0.0942 ms at B=256) is therefore a
+# CEILING on our FFN cost and every ratio built on it is a FLOOR; the folded
+# mixer (0.0572 ms at B=256) is the disclosed upside.
+# d2048 rows are banked tiles (OK); d4096 / d8192 rows are DISCLOSURE (untuned
+# default tiles) and are not quoted. State per stream is 1.0 MB at d2048 D128,
+# context-independent; the transformer's KV is 8 MB per 1k tokens per layer per
+# stream (MHA: 16 heads x d_head 128 x bf16 x K+V).
+#
+# What is MEASURED here is the per-layer d2048 step of each family. Depth, the
+# grouped-query cache, the KV-read step scaling and the feasible batch at the
+# geometry of record (FRONTIER_DENSE_1T_20261001) are MODELLED; the ratio is
+# quoted per layer at equal depth. Cross-check at import: 24 x the 262k B=1
+# flash row reproduces the 2026-08-14 full-model transformer cell (62.2 vs
+# 64.0 tok/s, within 5%).
+_COMPARATOR_KV_BYTES = 8192        # the receipt's MHA d2048 arm: 8 MB per 1k tokens per layer
+DECK_LAYER_CARD_20261001 = {
+    "status": "per-layer d2048 steps MEASURED (both families, own FFN mixer as written, ffncard + APPLES.md join); "
+              "depth / GQA cache / feasible batch MODELLED at the geometry of record",
+    "receipt": "battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/TABLE_plus_tridec_layer.csv",
+    "receipt_ffn": "battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/ffncard_20261001T143019Z/TABLE.csv",
+    "receipt_join": "battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/TABLE_apples.csv (+ APPLES.md)",
+    "d": 2048, "d_head": 128, "layers": 24,          # the receipt's d2048/24L comparator
+    "hbm_bytes_per_s": 3.35e12,
+    # the receipt box's usable capacity, from its own OOM text: "GPU 0 has a total
+    # capacity of 94.50 GiB" (flash_d8192*.log / flash_d2048_PB8_32.json
+    # capture_refusal). NOT SERVING's 72 GB H100 budget.
+    "hbm_gb": 94.5,
+    # ours, per layer by streams: tridec_layer (fused unit + W_o) and the FFN
+    # mixer AS WRITTEN (served form; UNCOMPILED eager modules, see above)
+    "own_tridec_ms": {1: 0.0365, 8: 0.0476, 32: 0.0780, 64: 0.1155, 256: 0.3769},
+    "own_ffn_mixer_ms": {1: 0.0824, 8: 0.0874, 32: 0.0886, 64: 0.0901, 256: 0.0942},
+    "own_ffn_mixer_folded_ms": {1: 0.0425, 8: 0.0440, 32: 0.0483, 64: 0.0481, 256: 0.0572},  # DISCLOSURE, not used
+    "own_state_mb_per_stream": 1.02,
+    "tf_kv_mb_per_1k_tokens_per_layer": 8.0,         # per stream (16 heads x 128 x bf16 x K+V at d2048 MHA = 8 MB/1k)
+    # the transformer, per layer: the deck flash row by context -> streams (FFN
+    # included; missing = OOM on the card), its FFN alone, and attention alone
+    # (= flash row - flash_ffn, TABLE_apples)
+    "tf_step_ms": {
+        4096:   {1: 0.119, 8: 0.182, 32: 0.512, 64: 0.904, 256: 3.701},
+        32768:  {1: 0.181, 8: 0.676, 32: 3.680, 64: 7.233, 256: 28.876},
+        131072: {1: 0.394, 8: 2.345, 32: 14.465, 64: 28.822},
+        262144: {1: 0.670, 8: 4.629, 32: 28.998},
+    },
+    "tf_ffn_ms": {1: 0.0265, 8: 0.0262, 32: 0.0270, 64: 0.0286, 256: 0.0405},
+    "tf_attn_only_ms": {
+        4096:   {1: 0.0922, 8: 0.1557, 32: 0.4850, 64: 0.8751, 256: 3.6604},
+        32768:  {1: 0.1542, 8: 0.6497, 32: 3.6534, 64: 7.2047, 256: 28.8358},
+        131072: {1: 0.3677, 8: 2.3189, 32: 14.4383, 64: 28.7936},
+        262144: {1: 0.6440, 8: 4.6026, 32: 28.9714},
+    },
+}
+# own layer = tridec_layer + FFN mixer as written; must equal TABLE_apples batt_layer_D128
+DECK_LAYER_CARD_20261001["own_layer_ms"] = {
+    b: DECK_LAYER_CARD_20261001["own_tridec_ms"][b] + DECK_LAYER_CARD_20261001["own_ffn_mixer_ms"][b]
+    for b in DECK_LAYER_CARD_20261001["own_tridec_ms"]}
+DECK_LAYER_CARD_20261001["own_step_ms"] = DECK_LAYER_CARD_20261001["own_tridec_ms"]   # legacy key: the unit alone
+for _b, _ms in {1: 0.1189, 8: 0.1350, 32: 0.1666, 64: 0.2056, 256: 0.4711}.items():
+    assert abs(DECK_LAYER_CARD_20261001["own_layer_ms"][_b] - _ms) < 1e-4, (_b, DECK_LAYER_CARD_20261001["own_layer_ms"][_b], _ms)
+del _b, _ms
 
 
-# ---- the inference lever, split into H5 x H6 (2026-09-29 (4) user ruling) --------
+def deck_layer_ffn_ms(d=None):
+    """RETIRED 2026-10-01 (review): the bytes-bound FFN estimate (6 d^2 bf16 bytes
+    over HBM bandwidth, ~0.015 ms at d2048) that stood in before the FFN card
+    was measured. Kept for the record only -- on no computation path."""
+    c = DECK_LAYER_CARD_20261001
+    d = d or c["d"]
+    return 6.0 * d * d * 2.0 / c["hbm_bytes_per_s"] * 1e3
+
+
+def deck_layer_own_step_ms(streams):
+    """Our per-layer step at `streams`: tridec_layer + the FFN mixer as written,
+    both MEASURED (= TABLE_apples batt_layer_D128)."""
+    return DECK_LAYER_CARD_20261001["own_layer_ms"][streams]
+
+
+def _deck_layer_tf_attn_only_ms(ctx_tokens, streams):
+    """The transformer's attention-only per-layer step at (context, streams):
+    the MEASURED apples cell, or -- for a context the receipt did not run (the
+    app's sidebar, the 1M sensitivity) -- a linear fit in context over that
+    stream count's measured cells (its KV re-read grows linearly with context).
+    Returns (ms, modelled)."""
+    table = DECK_LAYER_CARD_20261001["tf_attn_only_ms"]
+    ctx = int(round(ctx_tokens))
+    if ctx in table and streams in table[ctx]:
+        return table[ctx][streams], False
+    pts = [(float(c), ms[streams]) for c, ms in table.items() if streams in ms]
+    if len(pts) < 2:
+        raise ValueError(f"no transformer cells to fit at {streams} streams")
+    n = float(len(pts))
+    mx = sum(x for x, _ in pts) / n
+    my = sum(y for _, y in pts) / n
+    slope = sum((x - mx) * (y - my) for x, y in pts) / sum((x - mx) ** 2 for x, _ in pts)
+    return my + slope * (float(ctx_tokens) - mx), True
+
+
+def _deck_layer_tf_step_ms(ctx_tokens, streams, kv_bytes_per_token_per_layer=None):
+    """The transformer's per-layer step at (context, streams) from the apples
+    decomposition: flash_ffn[B] + flash_attn_only[ctx][B] x (kv bytes / 8192).
+    At the receipt's own 8 KB/token/layer this is the measured flash row; at a
+    grouped-query geometry only the attention term (the KV re-read) shrinks,
+    at EVERY context -- the FFN term does not depend on the cache. Returns
+    (ms, modelled)."""
+    c = DECK_LAYER_CARD_20261001
+    kv = _COMPARATOR_KV_BYTES if kv_bytes_per_token_per_layer is None else kv_bytes_per_token_per_layer
+    attn, modelled = _deck_layer_tf_attn_only_ms(ctx_tokens, streams)
+    return c["tf_ffn_ms"][streams] + attn * (kv / _COMPARATOR_KV_BYTES), modelled
+
+
+# ---- geometry of record for the decode ratios (2026-10-01 (4) user ruling) --------
+# "scale model depth to something realistic for a 1T dense model (estimate from the
+# open-source models)"; "MoE should only affect width, not depth, so the depth of
+# GLM 5.3 / Kimi K3 is fine". The per-layer step RATIO is depth-invariant, but the
+# transformer's KV capacity (streams that fit a GPU) and its KV-read-bound step
+# time are not, so the receipt's 24-layer d2048 comparator understates the gap at
+# frontier depth. Width is NOT scaled: our d2048 step is compared with their d2048
+# step (the receipt's d4096 / d8192 rows are untuned disclosures of the same order).
+# Our own state scales with depth too: 1 MB x 90 layers x 256 streams = 23 GB,
+# which fits the same card.
+# Smaller KV bytes have TWO distinct consequences and both are applied: (a) the
+# capacity refit (more streams fit, so the feasible batch rises) and (b) less
+# read traffic per step (the attention term of the step shrinks with the bytes).
+# This is not double counting: in the pure KV-bound regime tokens/s =
+# bandwidth / (ctx x bytes) independent of B, and the two effects are how a
+# measured per-B table reproduces that identity.
+FRONTIER_DENSE_1T_20261001 = {
+    # Open anchors: Kimi K3 = 93 layers (2.8T total / 104B active, attention hidden
+    # 7168; github.com/MoonshotAI/Kimi-K3; dense-equivalent sqrt(total x active)
+    # ~0.54T), GLM-5 flagship = 78 layers (744B; the est_depth anchor already in
+    # this file) -> ~90 layers for the 1T dense-equivalent geometry of record.
+    # (Llama-3.1-405B's 126 layers is an outlier for its class and is NOT used.)
+    # Caveat recorded, not modelled: Kimi K3 is itself a hybrid -- 69 of its 93
+    # layers are linear attention (KDA) and only 24 carry a growing KV cache -- the
+    # baseline here is a FULL-attention transformer at that depth, which is what
+    # the deck compares against.
+    "name": "frontier_dense_1t",
+    "anchor": "Kimi K3 93 layers (2.8T/104B MoE) and GLM-5 78 layers (744B) -> ~90 at 1T dense-equivalent",
+    "n_params": 1e12,
+    "layers": 90,
+    "d_model": None,                           # width NOT scaled (see above)
+    # Frontier attention is grouped-query: 8 kv-heads x d_head 128 x bf16 x (K+V)
+    # = 4 KB per token per layer (same assumption as FLEET_MODEL_20260831); the
+    # receipt's flash arm is MHA at d2048 D128 = 8 KB per token per layer.
+    "kv_bytes_per_token_per_layer": 4096,
+    "hbm_gb": 94.5,   # the receipt box: "GPU 0 has a total capacity of 94.50 GiB" (its OOM text)
+}
+DECODE_GEOMETRY_OF_RECORD = FRONTIER_DENSE_1T_20261001
+
+
+def _deck_layer_geometry(geometry):
+    """(layers, kv bytes per token per layer, hbm GB, name) for None (the receipt's
+    24-layer MHA comparator) or a geometry dict such as FRONTIER_DENSE_1T_20261001."""
+    c = DECK_LAYER_CARD_20261001
+    if geometry is None:
+        return c["layers"], _COMPARATOR_KV_BYTES, c["hbm_gb"], "comparator_24l"
+    return (geometry["layers"], geometry["kv_bytes_per_token_per_layer"],
+            geometry.get("hbm_gb", c["hbm_gb"]), geometry.get("name", "custom"))
+
+
+def _deck_layer_tf_fit(ctx_tokens, layers, kv_bytes_per_token_per_layer, hbm_gb):
+    """(streams that fit, largest measured batch <= that or 1, KV GiB per stream).
+    Binary units throughout (the receipt box's 96 GB is 96 GiB of HBM)."""
+    c = DECK_LAYER_CARD_20261001
+    kv_bytes = float(ctx_tokens) * kv_bytes_per_token_per_layer * layers
+    fit = int(hbm_gb * 2 ** 30 // kv_bytes)
+    measured = sorted({b for ms in c["tf_step_ms"].values() for b in ms})
+    ok = [b for b in measured if b <= fit]
+    return fit, (max(ok) if ok else 1), kv_bytes / 2 ** 30
+
+
+def deck_layer_tf_feasible_streams(ctx_tokens, layers=None, hbm_gb=None, kv_bytes_per_token_per_layer=None):
+    """The transformer's largest MEASURED batch whose FULL-MODEL KV fits the
+    card at this context: KV per stream = kv bytes per token per layer x
+    `layers` x context; streams that fit = floor(HBM / that); the largest
+    measured B at or under that count (1 if none fits — the 1/context law
+    still credits it one stream; sharding cost ignored, conservative for us).
+    Defaults are the receipt's 24-layer MHA comparator (8 KB/token/layer) on
+    its 96 GB GH200 box — deliberately not SERVING['hbm_usable_gb']."""
+    c = DECK_LAYER_CARD_20261001
+    layers = c["layers"] if layers is None else layers
+    hbm_gb = c["hbm_gb"] if hbm_gb is None else hbm_gb
+    kv = _COMPARATOR_KV_BYTES if kv_bytes_per_token_per_layer is None else kv_bytes_per_token_per_layer
+    return _deck_layer_tf_fit(ctx_tokens, layers, kv, hbm_gb)[1]
+
+
+def deck_layer_levers(ctx_tokens, own_streams=256, geometry=None):
+    """H5, H6 and their product at a context from the per-layer receipt:
+    h5 = our streams / the transformer's full-model-feasible batch,
+    h6 = its per-layer step at that batch / ours at `own_streams` (both layers
+    MEASURED: tridec + FFN mixer as written vs flash + FFN),
+    ratio = h5 x h6 = tokens per GPU-second, ours over the transformer's.
+
+    geometry=None -> the receipt's 24-layer MHA d2048 comparator (the measured
+    anchor). geometry=FRONTIER_DENSE_1T_20261001 (DECODE_GEOMETRY_OF_RECORD) ->
+    MODELLED: the transformer's KV per stream = ctx x 4 KB x 90 layers (fewer
+    streams fit; 'sharded' flags a context where even one does not, cost
+    ignored) and its step = flash_ffn[B] + flash_attn_only[ctx][B] x (4096 /
+    8192) at every context (the KV re-read is the attention term). Ours is
+    unchanged (256 streams, measured layer)."""
+    layers, kv_bytes, hbm_gb, name = _deck_layer_geometry(geometry)
+    fit, b_tf, kv_gib = _deck_layer_tf_fit(ctx_tokens, layers, kv_bytes, hbm_gb)
+    tf_ms, modelled = _deck_layer_tf_step_ms(ctx_tokens, b_tf, kv_bytes)
+    own_ms = deck_layer_own_step_ms(own_streams)
+    h5 = float(own_streams) / b_tf
+    h6 = tf_ms / own_ms
+    return {"h5": h5, "h6": h6, "ratio": h5 * h6, "tf_streams": b_tf, "own_streams": own_streams,
+            "tf_step_ms": tf_ms, "own_step_ms": own_ms, "modelled": modelled,
+            "geometry": name, "layers": layers, "tf_kv_gib_per_stream": kv_gib, "tf_fit": fit,
+            "sharded": fit < 1, "kv_headroom": 1.0 - kv_gib / hbm_gb,
+            "step_scale": kv_bytes / _COMPARATOR_KV_BYTES,
+            "basis": ("per-layer steps measured; depth, grouped-query cache and feasible batch modelled"
+                      if geometry is not None else "per-layer steps measured, 24-layer comparator")}
+
+
+def deck_layer_decode_ratio(ctx_tokens, own_streams=256, geometry=None):
+    """Tokens per GPU-second, ours over the transformer's, each family at its
+    feasible stream count at that context (the transformer's capped by its
+    full-model KV, ours at 256 by the grid). geometry as in deck_layer_levers."""
+    return deck_layer_levers(ctx_tokens, own_streams, geometry)["ratio"]
+
+
+def deck_layer_decode_ms_per_step(streams):
+    """Full-model (24-layer) decode step at `streams`, ms, from the receipt
+    (measured layer incl. the FFN mixer) — the answer to the CAMPAIGN_LANDED
+    2.5 ms x 64 question (4.93 ms at 64 streams, 11.3 ms at 256)."""
+    return DECK_LAYER_CARD_20261001["layers"] * deck_layer_own_step_ms(streams)
+
+
+# Import-time cross-checks: the per-layer receipt reproduces the 2026-08-14
+# full-model transformer cell (24 x 0.670 ms -> 62.2 tok/s vs 64.0 MEASURED),
+# and the four quoted ratios are what the table computes.
+_DLC_TF_262K_TPS = 1e3 / (DECK_LAYER_CARD_20261001["layers"] * DECK_LAYER_CARD_20261001["tf_step_ms"][262144][1])
+assert abs(_DLC_TF_262K_TPS / DECODE_THROUGHPUT_20260814["tf_far_cell"]["tokens_per_s"] - 1.0) < 0.05, (
+    _DLC_TF_262K_TPS, DECODE_THROUGHPUT_20260814["tf_far_cell"]["tokens_per_s"])
+# the 24-layer MEASURED comparator (both layers measured, flash row at 8 KB/token/layer)
+for _ctx, _lo, _hi in ((4096, 7.5, 7.9), (32768, 45.0, 47.0), (131072, 210.0, 218.0), (262144, 360.0, 368.0)):
+    assert _lo <= deck_layer_decode_ratio(_ctx) <= _hi, (_ctx, deck_layer_decode_ratio(_ctx))
+    assert not deck_layer_levers(_ctx)["modelled"]
+# the geometry of record (~90 layers, GQA, MODELLED): 64 / 8 / 1 / 1 feasible
+# streams, the single 262k stream is 90 GiB of the 94.5 GiB card (fits, 4.5 GiB headroom)
+for _ctx, _lo, _hi, _b in ((4096, 3.8, 4.2, 64), (32768, 23.0, 25.0, 8), (131072, 112.0, 117.0, 1), (262144, 186.0, 193.0, 1)):
+    _lv = deck_layer_levers(_ctx, geometry=DECODE_GEOMETRY_OF_RECORD)
+    assert _lo <= _lv["ratio"] <= _hi and _lv["tf_streams"] == _b and not _lv["modelled"] and not _lv["sharded"], _lv
+del _ctx, _lo, _hi, _b, _lv
+
+
+# ---- the inference lever, split into H5 x H6 (2026-09-29 (4); receipt 2026-10-01) ----
 # Tokens served per GPU vs the transformer, at the same model size:
 #   H5 more conversations per GPU  = our resident streams / the transformer's
-#                                    (64 vs 1 at 262k: MEASURED, a 2nd transformer
-#                                    stream OOMs; our 64 is a grid cap)
-#   H6 faster decode per token     = transformer per-token decode time / ours
-#                                    (15.6 ms vs the 2.5 ms post-kernel ESTIMATE;
-#                                    MEASURED ~x2.6 on the older kernels)
+#                                    full-model-feasible batch (256 vs 1 at 262k:
+#                                    feasible batch MODELLED at the ~90-layer GQA
+#                                    geometry of record from the measured per-
+#                                    layer receipt, DECK_LAYER_CARD_20261001)
+#   H6 decode step vs the transformer, per layer = its per-layer step at that
+#                                    batch / ours at 256 streams, both layers
+#                                    MEASURED incl. FFN (x0.74 at 262k at the
+#                                    geometry of record, its attention term
+#                                    scaled to GQA KV bytes; x1.42 on the
+#                                    24-layer MHA comparator; was the 2.5 ms-
+#                                    per-token ESTIMATE, x6.25). Below 1: per
+#                                    step we are SLOWER; the lever is H5.
 #   PF prompt-processing (prefill) speed vs the transformer — the ONLY inference
 #      input that differs by scenario (banked x3.936 vs the full x7.03 programme)
 #   rq the transformer's prompt time / its decode time per generated token
 #      (in:out x decode rate / prefill rate; ~0.23% at 262k)
-# inference throughput = (1 + rq) / (rq / PF + 1 / (H5 x H6)); it reproduces the
-# campaign_landed_flop_lever accounting exactly (asserted below).
-def decode_levers(ctx_tokens=None):
-    """(H5, H6) at a context: H5 = our resident streams per GPU / the transformer's
-    (at its KV ceiling), H6 = the rest of the decode-throughput ratio, i.e. the
-    per-token decode speed-up. H5 x H6 = our decode tokens/s / the transformer's."""
-    c = CAMPAIGN_LANDED_20260831
-    ctx = float(c["context_tokens"] if ctx_tokens is None else ctx_tokens)
-    own_tps = c["streams_per_gpu"] * 1000.0 / c["decode_own_ms_per_token"]
-    tf_streams = max(1, serving_economics(ctx)["tf_streams_per_gpu"])
-    h5 = c["streams_per_gpu"] / tf_streams
-    return h5, own_tps / decode_tokens_per_s_per_gpu("transformer", ctx) / h5
+# inference throughput at equal size = (1 + rq) / (rq / PF + 1 / (H5 x H6));
+# the inference LEVER (GLOBALS['flop_factor']) is that x the equal-quality size
+# factor param_matching_gain(1T) = x4.22 (2026-10-01 ruling: inference does
+# scale with model size — reinstated, same treatment as training).
+def decode_levers(ctx_tokens=None, geometry=DECODE_GEOMETRY_OF_RECORD):
+    """(H5, H6) at a context from the 2026-10-01 per-layer decode receipt
+    (deck_layer_levers) at the geometry of record (~90-layer GQA frontier
+    model; pass geometry=None for the 24-layer comparator): H5 = our 256
+    streams / the transformer's full-model-feasible batch, H6 = its per-layer
+    step at that batch / ours (FFN added). H5 x H6 = our decode tokens/s per
+    GPU / the transformer's. Contexts the receipt did not run are fitted
+    linearly in context (deck_layer_levers' 'modelled' flag)."""
+    ctx = CAMPAIGN_LANDED_20260831["context_tokens"] if ctx_tokens is None else ctx_tokens
+    lv = deck_layer_levers(ctx, geometry=geometry)
+    return lv["h5"], lv["h6"]
 
 
 def prefill_advantage(kernels="current", ctx_tokens=None):
@@ -1600,18 +1897,27 @@ def prompt_time_ratio(ctx_tokens=None, in_out_ratio=None):
 
 
 def inference_throughput(h5, h6, pf, rq):
-    """Tokens served per GPU vs the transformer (the inference compute lever,
-    g['flop_factor']) from H5, H6, the prefill advantage PF and the prompt share rq."""
+    """Tokens served per GPU vs the transformer at EQUAL model size, from H5,
+    H6, the prefill advantage PF and the prompt share rq. Multiply by the
+    equal-quality size factor for the inference lever g['flop_factor']."""
     return (1.0 + rq) / (rq / pf + 1.0 / (h5 * h6))
 
 
-H5_CONVERSATIONS, H6_DECODE = decode_levers()        # 64, x6.25 at 262k
+H5_CONVERSATIONS, H6_DECODE = decode_levers()        # 256, x0.74 at 262k: per-layer steps measured 2026-10-01, ~90-layer GQA geometry modelled
 PF_CURRENT, PF_OPTIMIZED = prefill_advantage("current"), prefill_advantage("mature")  # x10.3, x18.4
 PROMPT_TIME_RATIO = prompt_time_ratio()              # 0.0023
-for _pf, _ref in ((PF_CURRENT, INFERENCE_LEVER_CURRENT), (PF_OPTIMIZED, INFERENCE_LEVER_OPTIMIZED)):
-    assert abs(inference_throughput(H5_CONVERSATIONS, H6_DECODE, _pf, PROMPT_TIME_RATIO) - _ref) < 1e-6, (_pf, _ref)
-del _pf, _ref
-assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 1e-6
+INFERENCE_SIZE_FACTOR = param_matching_gain(DECK_DEPLOYMENT_SCALE)   # x4.22 at 1T, PROJECTION (reinstated 2026-10-01)
+# tokens per GPU at equal size, by prefill scenario (H5 x H6 = 189.4 at the
+# geometry of record; the prompt share takes it to 182.1 / 185.4)
+INFERENCE_LEVER_EQUAL_SIZE = inference_throughput(H5_CONVERSATIONS, H6_DECODE, PF_CURRENT, PROMPT_TIME_RATIO)
+INFERENCE_LEVER_EQUAL_SIZE_OPTIMIZED = inference_throughput(H5_CONVERSATIONS, H6_DECODE, PF_OPTIMIZED, PROMPT_TIME_RATIO)
+# the inference LEVER = equal-size throughput x the size factor (x768 / x782)
+INFERENCE_LEVER_CURRENT = INFERENCE_LEVER_EQUAL_SIZE * INFERENCE_SIZE_FACTOR
+INFERENCE_LEVER_OPTIMIZED = INFERENCE_LEVER_EQUAL_SIZE_OPTIMIZED * INFERENCE_SIZE_FACTOR
+assert abs(GLOBALS["flop_factor"] - INFERENCE_LEVER_CURRENT) < 1e-6, (
+    f"GLOBALS['flop_factor']={GLOBALS['flop_factor']} drifted from the computed "
+    f"inference lever {INFERENCE_LEVER_CURRENT:.6f} = {INFERENCE_LEVER_EQUAL_SIZE:.4f} x {INFERENCE_SIZE_FACTOR:.4f}"
+)
 GLOBALS["conv_per_gpu"] = H5_CONVERSATIONS
 GLOBALS["decode_speedup"] = H6_DECODE
 
@@ -1843,7 +2149,7 @@ def campaign_landed_reduction(train_share=None, curriculum=None, kernels="mature
 # training numbers (app tab, workbook sheet, __main__ print). status is one of
 # MEASURED / PROJECTION / ASSUMPTION.
 SERVING_TRAINING_ASSUMPTIONS = [
-    ("Compute lever (Today, 2026-09-01 re-base)", f"x{campaign_landed_flop_lever(prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824):.0f} = full-workload serving lever (decode 2.5 ms/token x 64 streams ESTIMATE, prefill at the BANKED x{KERNEL_SPEEDUP_REALIZED_20260824:.2f}) x the x{param_matching_gain(DECK_DEPLOYMENT_SCALE):.2f} FIT-DERIVED equal-quality ratio at trillion scale; Ceiling = same at the full x{CEILING_PREFILL_SPEEDUP:.2f} maturity factor (x{CAMPAIGN_LANDED_FLOP_LEVER:.0f})", "ESTIMATE x PROJECTION", "campaign_landed_flop_lever(); aggregate-decode receipt PENDING (decode_aggregate_receipt_20260831_instructions.md)"),
+    ("Compute lever (2026-10-01 re-base)", f"x{GLOBALS['flop_factor']:.0f} = tokens per GPU at equal size x{INFERENCE_LEVER_EQUAL_SIZE:.1f} (H5 x{H5_CONVERSATIONS:.0f} conversations per GPU x H6 x{H6_DECODE:.2f} decode step per layer; per-layer d2048 steps MEASURED 2026-10-01 incl. FFN on both arms (ours uncompiled, a floor), depth / grouped-query cache / feasible batch MODELLED at the ~90-layer FRONTIER geometry of record (FRONTIER_DENSE_1T_20261001; the 24-layer measured comparator reads H5 x H6 = x364), prompt share at the banked prefill x{KERNEL_SPEEDUP_REALIZED_20260824:.2f}) x the x{param_matching_gain(DECK_DEPLOYMENT_SCALE):.2f} FIT-DERIVED equal-quality size factor at trillion scale (reinstated 2026-10-01); Optimized kernels = x{INFERENCE_LEVER_OPTIMIZED:.0f} (prefill at the full x{CEILING_PREFILL_SPEEDUP:.2f}). The former 2.5 ms per token x 64-stream aggregate-decode ESTIMATE (x{campaign_landed_flop_lever(prefill_speedup=KERNEL_SPEEDUP_REALIZED_20260824):.0f} with the size factor) is SUPERSEDED and kept for history", "MEASURED x PROJECTION", "deck_layer_levers(); DECK_LAYER_CARD_20261001 (battention/build-specs/deck_layer_card/receipts_box1_20261001T043008Z/TABLE_plus_tridec_layer.csv)"),
     ("Equal-quality parameter matching", "sealed 2026-08-14 refit, 4 rungs per family (47M-663M params): the fits cross at 392M and bAttention then matches the transformer fit's quality on 84.2% of the params at 1B, 55.2% at 10B, 36.2% at 100B, 23.7% at 1T, 15.5% at 10T. The receipt's own words: 'a projection of the two fits, not a measurement'", "PROJECTION", "quality_fit_v4.json param_matching; fits over the sealed rope-convention ladder"),
     ("Single-GPU training step (AGAINST us)", f"RE-BASED 2026-08-24: on one GH200, single layer, fwd+bwd, bf16, checkpointing off both arms, against a MODERN transformer block (24Q/4KV, head_dim 256, RoPE 64, gated attention), a bAttention step costs x{KERNEL_CAMPAIGN_20260824['step_ratio_2k']:.2f} MORE at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_ms_2k']:.1f} vs {KERNEL_CAMPAIGN_20260824['tf_ms_2k']:.1f} ms/step) and x{KERNEL_CAMPAIGN_20260824['step_ratio_8k']:.2f} at T=8,192. It read x6.116 (400.4 ms) the same morning and x6.46 on the older d1536/27L fp16 601-step receipt. Fwd x1.82, bwd x2.35. Training is still excluded from the serving claim, but the gap is now a kernel-program line item with a funded gate, not a structural loss", "MEASURED", "2026-08-24 GH200 megakernel measurement; prior: dtype_trio_v4.json rows[fp16]"),
     ("Training PEAK MEMORY (AGAINST us)", f"x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k']:.3f} at T=2,048 ({KERNEL_CAMPAIGN_20260824['battn_peak_mib_2k']:,.1f} vs {KERNEL_CAMPAIGN_20260824['tf_peak_mib_2k']:,.1f} MiB) and x{KERNEL_CAMPAIGN_20260824['mem_ratio_8k']:.3f} at T=8,192, down from x{KERNEL_CAMPAIGN_20260824['mem_ratio_2k_precampaign']:.3f} the same morning. This is TRAINING peak memory and is NOT the mem_factor lever, which is SERVING state (O(1) recurrent state vs O(T) KV cache) and is unaffected. It is not an input to the cost model; it caps per-GPU batch density", "MEASURED", "2026-08-24 GH200 megakernel measurement"),
@@ -1977,8 +2283,9 @@ def global_estimate(total, g):
 # The headline is MODEL-COMPUTED -- it is compute_year(GLOBALS, COMPANIES, 'fy25')
 # rolled to TOTAL -- but every external surface (deck YAMLs, app copy, workbook
 # prose) quotes it as a hand-transcribed literal. headline_family() recomputes it
-# and the assert below is the guard, so a lever change can never leave the decks
-# saying a number this file no longer produces.
+# and the assert loop over HEADLINE_QUOTED_20261001 at the BOTTOM of this file
+# (after the value bridge it now also reads) is the guard, so a lever change can
+# never leave the decks saying a number this file no longer produces.
 #
 # RE-VERIFIED 2026-08-24 against the re-based kernel levers: the TODAY family did
 # NOT move, and the reason is structural. WORKLOAD['train_share'] defaults to 0,
@@ -2045,13 +2352,24 @@ def headline_with_training(curriculum, train_share, g=None, companies=None):
 
 
 def headline_family(g=None, companies=None):
-    """Recompute every value in the quoted headline family. All $B."""
+    """Recompute every value in the quoted headline family. All $B.
+
+    Two families in one dict: the serving-only compute_year engine (fy25_* /
+    fy26_* / global_* / today_reduction) and, since 2026-10-01, the plain-
+    language VALUE BRIDGE totals the simple deck and the app quote (fy26 bridge
+    cut with servers + datacenters following, the datacenter-held sensitivity,
+    the fused-kernel upside, fy25, net with Helarctos, and the two fleet levers)."""
     g = g if g is not None else GLOBALS
     companies = companies if companies is not None else COMPANIES
     # Ceiling = the campaign-landed maturity lever (2026-09-01 re-base; the
     # prefill-only CEILING_FLOP_LEVER is retired from the headline family).
     _, t25 = compute_year(g, companies, "fy25")
     _, t26 = compute_year(g, companies, "fy26")
+    lv = value_bridge_levers(g)
+    _, b25 = value_bridge(g, companies, "fy25", levers=lv)
+    _, b26 = value_bridge(g, companies, "fy26", levers=lv)
+    _, b26_held = value_bridge(g, companies, "fy26", levers=lv, follow=BRIDGE_FOLLOW_HELD)
+    _, b26_mature = value_bridge(g, companies, "fy26", levers=value_bridge_levers(g, kernels="mature"))
     return {
         "fy25_spend_cut": t25["spend_cut"],
         "fy25_capitalized": t25["capitalized"],
@@ -2062,47 +2380,21 @@ def headline_family(g=None, companies=None):
         "global_fy25_capitalized": global_estimate(t25, g)["capitalized"],
         "global_fy26_capitalized": global_estimate(t26, g)["capitalized"],
         "today_reduction": reduction_factor(g),
+        # value bridge (2026-10-01): servers + datacenters follow the fleet
+        "fy26_bridge_spend_cut": b26["spend_cut"],
+        "fy26_bridge_spend_cut_held": b26_held["spend_cut"],
+        "fy26_bridge_spend_cut_mature": b26_mature["spend_cut"],
+        "fy25_bridge_spend_cut": b25["spend_cut"],
+        "fy26_bridge_net_with": b26["net_with"],
+        "fy26_bridge_pct_cut": b26["pct_cut"],
+        "train_lever": lv["train_lever"],
+        "serving_gpu_lever": lv["serving_gpu_lever"],
     }
 
 
-# (key, what the surfaces say, tolerance) — tolerance is the quoted rounding.
-# RE-QUOTED 2026-09-01: the whole family re-based onto the banked-kernels +
-# aggregate-decode-estimate levers (Today x793 / Ceiling x816). The previous
-# family (159.0 / 2600 / 0.42 / -136 / 366 / 6100 / 3300 / 7600 / 163.7 /
-# 20.0 / 49.6 / 3.1, HEADLINE_QUOTED_20260824) is RETIRED with the x9.24 basis.
-# RE-QUOTED 2026-09-29: data-center (infra) shares re-based on 10-K/10-Q
-# property & equipment notes and segment disclosures (Microsoft 0.97,
-# Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
-# (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
-HEADLINE_QUOTED_20260929 = (
-    # RE-QUOTED 2026-09-29 (4): H4 memory lever at the MEASURED x2,032 (was the
-    # /100 cap) and the inference lever split into H5 x H6 at full precision, so
-    # the inference compute lever (x368) now binds. (3): inference lever no
-    # longer scales with model size (x368, was x1,553). (2): E[context] 262k and
-    # wall power 2.3 kW/GPU. The (3) family (161.8 / 2697 / 0.446 / -122.0 /
-    # 382.9 / 6381 / 3371 / 7976 / x141.1) is RETIRED.
-    ("fy25_spend_cut", 162.7, 0.5),          # "~$163B/yr"
-    ("fy25_capitalized", 2712.0, 50.0),      # "~$2.7T capitalized at 6%"
-    ("fy25_pct_cut", 0.448, 0.005),          # "~45% of AI spend cut"
-    ("fy25_net_arch", -121.2, 1.0),          # "burn shrinks to ~ -$121B/yr"
-    ("fy26_spend_cut", 385.1, 0.5),          # "FY26 ~$385B/yr"
-    ("fy26_capitalized", 6418.0, 50.0),      # "~$6.4T"
-    ("global_fy25_capitalized", 3391.0, 50.0),   # "global est ~$3.4T FY25"
-    ("global_fy26_capitalized", 8022.0, 50.0),   # "~$8.0T FY26"
-    ("today_reduction", 723.6, 0.5),         # "~x724 cost-weighted" (memory x2,032, inference x368)
-)
-
-_HEADLINE = headline_family()
-for _k, _quoted, _tol in HEADLINE_QUOTED_20260929:
-    assert abs(_HEADLINE[_k] - _quoted) <= _tol, (
-        f"headline drift: {_k} computes to {_HEADLINE[_k]:.4f} but the decks, the app "
-        f"and the workbook quote {_quoted} (tolerance {_tol}). Re-quote every surface "
-        f"listed in the block above before changing a lever."
-    )
-del _k, _quoted, _tol
 
 
-# ---- plain-language VALUE BRIDGE (2026-09-28) -----------------------------------
+# ---- plain-language VALUE BRIDGE (2026-09-28; follow-the-fleet 2026-10-01) --------
 # The audience-facing view (workbook Summary / Value Bridge / Levers tabs, app
 # tabs of the same names). Same engine as compute_company, with one change that
 # makes the story legible: the chip fleet is SPLIT into a TRAINING fleet and a
@@ -2113,40 +2405,58 @@ del _k, _quoted, _tol
 #                   s x smaller (FIT-DERIVED), trains on s x fewer tokens
 #                   (compute-optimal D ~ N), and each token is k x cheaper over
 #                   a modern long-context curriculum (MEASURED r(T) x
-#                   ILLUSTRATIVE mix). GPU-hours fall s*s*k -> the cluster can
-#                   be that much smaller -> training capex avoided =
-#                   training fleet x (1 - 1/(s*s*k)). Whole-GPU lever: no
-#                   memory credit is taken on training (conservative).
+#                   ILLUSTRATIVE mix; k = x2.22 today, x3.97 at the fused-kernel
+#                   target — 2026-10-01 ruling, H3 is MEASURED, no longer parity).
+#                   GPU-hours fall s*s*k -> the cluster can be that much smaller
+#                   -> training capex avoided = training fleet x (1 - 1/(s*s*k)).
+#                   Whole-GPU lever: no memory credit is taken on training.
 #   serving fleet   WHOLE GPUs (2026-09-29 user ruling: a GPU is bought as one
 #                   unit, memory and compute together). The fleet is sized to
 #                   whichever resource runs out first, so it shrinks by the
-#                   SMALLER of the memory lever and the compute lever
-#                   (s x serving throughput per GPU) -- x100 at the defaults,
-#                   i.e. the conservative memory cap binds. The technical tabs
-#                   keep the Amdahl memory/compute cost split (~x154); the
-#                   difference is under $1B on FY26.
+#                   SMALLER of the memory lever (x2,032 MEASURED at 262k) and the
+#                   compute lever (tokens per GPU at equal size x the equal-
+#                   quality size factor s — 2026-10-01 ruling, inference DOES
+#                   scale with model size): x768 at the defaults (frontier
+#                   geometry of record), so compute binds. The technical tabs
+#                   keep the Amdahl memory/compute cost split (~x1,225).
 #
 # Fleets are ADDITIVE, so the dollars attribute exactly (training / serving /
-# power). With every training share at 0 and the serving lever set to the
-# Amdahl reduction this reproduces compute_company's spend cut exactly
-# (asserted), so the bridge and the technical engine share one base.
-# Base = accelerator capex only (dc_scale deliberately ignored here: buildings
-# and power infrastructure are upside, stated on the surfaces).
+# power). With every training share at 0, the serving lever set to the Amdahl
+# reduction and nothing following, this reproduces compute_company's spend cut
+# exactly (asserted), so the bridge and the technical engine share one base.
+#
+# Base = the whole AI bill (2026-10-01 user ruling: "they should also scale
+# down if no longer necessary"; datacenters are a hybrid of training and
+# serving = the same per-company blend). The four buckets are sized exactly as
+# compute_company sizes them -- accelerators, the SERVERS around them (the rest
+# of the server bucket), the DATACENTER (the rest of AI-infra capex: buildings,
+# power & cooling, network) and POWER -- and every bucket sized by the
+# accelerator count follows the company's blended fleet cut (BRIDGE_FOLLOW_
+# 20261001; power always did). BRIDGE_FOLLOW_HELD (datacenter leases contracted
+# to FY33) is the sensitivity. g['dc_scale'] is deliberately ignored here.
 VALUE_BRIDGE_CURRICULUM = "modern_standard"
-# Training speed per token at the SAME model size (2026-09-29 user ruling):
-# roughly comparable to a transformer, so no speed credit is taken. The
-# training saving comes only from the smaller equal-quality model trained on
-# fewer tokens (s x s). The curriculum-weighted kernel advantage (x2.2 today,
-# x4.0 at maturity) stays in the technical appendix as background.
-TRAIN_SPEED_SAME_SIZE = 1.0
-# Per-scenario training speed (2026-09-29: two scenarios kept, cells that
-# differ are marked on every surface). Both at parity until the kernel
-# programme gives a reason to credit a training speed-up.
-TRAIN_SPEED_BY_SCENARIO = {"current": TRAIN_SPEED_SAME_SIZE, "mature": TRAIN_SPEED_SAME_SIZE}
+# H3 training speed per token at the SAME model size (2026-10-01 user ruling,
+# reversing the 2026-09-29 parity): step ratios MEASURED at 2k and 8k and
+# MODELLED beyond (TRAIN_COST_FIT_20260824, flat per-token for us, base +
+# attn x T for the transformer; the B4/T32k parity cell is RETIRED as an
+# occupancy artifact and validates nothing), cost-weighted over the modern
+# 8k/64k/256k curriculum whose SHARES are ILLUSTRATIVE. 'current' = today's
+# kernels (x2.22); 'mature' = the fused-kernel 8k-parity TARGET (x3.97), not a
+# receipt.
+TRAIN_SPEED_BY_SCENARIO = {
+    "current": training_advantage_mix(VALUE_BRIDGE_CURRICULUM)["advantage"],      # = 2.22: r(T) measured 2k/8k, modelled beyond, x ILLUSTRATIVE mix
+    "mature": campaign_landed_train_advantage(VALUE_BRIDGE_CURRICULUM, kernels="mature",
+                                              quality_matched=False),             # = 3.97 TARGET
+}
+TRAIN_SPEED_SAME_SIZE = TRAIN_SPEED_BY_SCENARIO["current"]
+# Which capex buckets follow the fleet (fraction of the bucket that scales with
+# the accelerator count). Headline: both. Sensitivity: datacenters held.
+BRIDGE_FOLLOW_20261001 = {"servers": 1.0, "datacenter": 1.0}
+BRIDGE_FOLLOW_HELD = {"servers": 1.0, "datacenter": 0.0}   # contracted leases to FY33 delay the datacenter saving
 
 
-# The five Helarctos levers as every surface labels them (workbook + app).
-# H1-H5 are the ONLY inputs about the architecture; everything else (capex,
+# The six Helarctos levers as every surface labels them (workbook + app).
+# H1-H6 are the ONLY inputs about the architecture; everything else (capex,
 # data-center / server / accelerator / training shares, $ per GPU, power,
 # electricity, discount rate) is market, company or modelling data.
 # high_impact = moves the FY2026 saving by >= $10B in sensitivity_table();
@@ -2156,13 +2466,17 @@ HELARCTOS_LEVERS = [
      "fleet": "Training", "high_impact": True, "by_scenario": False},
     {"code": "H2", "key": "fewer_tokens", "name": "Fewer training tokens",
      "fleet": "Training", "high_impact": False, "by_scenario": False},
+    # H3: MEASURED step costs over the modern 8k/64k/256k curriculum (x2.22);
+    # curriculum shares ILLUSTRATIVE; mature = fused-kernel 8k-parity TARGET (x3.97)
     {"code": "H3", "key": "train_speed", "name": "Training speed per token (same model size)",
-     "fleet": "Training", "high_impact": False, "by_scenario": True},
+     "fleet": "Training", "high_impact": False, "by_scenario": True},   # x1 parity -> -$8.9B: under the $10B bar
     {"code": "H4", "key": "memory", "name": "Memory per live conversation",
      "fleet": "Inference", "high_impact": False, "by_scenario": False},
     {"code": "H5", "key": "conversations_per_gpu", "name": "More conversations per GPU",
      "fleet": "Inference", "high_impact": False, "by_scenario": False},
-    {"code": "H6", "key": "faster_decode", "name": "Faster decode per token",
+    # H6 reads below 1 at the geometry of record (x0.74: per step we are slower,
+    # the lever is H5), so it is named for what it is (review 2026-10-01)
+    {"code": "H6", "key": "faster_decode", "name": "Decode step vs the transformer, per layer",
      "fleet": "Inference", "high_impact": False, "by_scenario": False},
 ]
 
@@ -2177,23 +2491,29 @@ def lever_label(code, markers=True):
 def value_bridge_levers(g=None, kernels="current", n_tf=None):
     """The six audience-facing Helarctos levers + the fleet levers they
     compose into. kernels: 'current' (Today) or 'mature' (Ceiling: optimized
-    kernels). The serving throughput lever is read off g['flop_factor'] / s,
-    so a typed-in FLOPs lever flows through."""
+    kernels). The serving throughput lever is read off g['flop_factor'] — the
+    tokens-per-GPU ratio at equal size x the equal-quality size factor
+    (2026-10-01 ruling) — so a typed-in FLOPs lever flows through; the
+    'mature' tier scales it by the prefill-maturity ratio
+    INFERENCE_LEVER_OPTIMIZED / INFERENCE_LEVER_CURRENT (~x1.04)."""
     g = g if g is not None else GLOBALS
     scale = DECK_DEPLOYMENT_SCALE if n_tf is None else n_tf
     s = param_matching_gain(scale)
     k = TRAIN_SPEED_BY_SCENARIO.get(kernels, TRAIN_SPEED_SAME_SIZE)
-    serve_tp = float(g["flop_factor"])  # inference cost doesn't scale with model size
+    serve_tp = float(g["flop_factor"])  # = inference_throughput(H5, H6, prefill, prompt share) x s
+    if kernels == "mature":
+        serve_tp *= INFERENCE_LEVER_OPTIMIZED / INFERENCE_LEVER_CURRENT
     return {
-        "smaller_model": s,           # PROJECTION (fits over measured 47M-663M rungs)
-        "fewer_tokens": s,            # PROJECTION (compute-optimal scaling, D ~ N)
-        "train_speed": k,             # parity at the same size: no speed credit (user ruling 2026-09-29)
+        "smaller_model": s,           # H1: PROJECTION (fits over measured 47M-663M rungs)
+        "fewer_tokens": s,            # H2: PROJECTION (compute-optimal scaling, D ~ N)
+        "train_speed": k,             # H3: MEASURED x2.22 (current) / TARGET x3.97 (mature), modern curriculum
         "memory": float(g["mem_factor"]),   # H4: MEASURED x2,032 at 262k (test model)
-        "conversations_per_gpu": float(g.get("conv_per_gpu", H5_CONVERSATIONS)),  # H5: 64 vs 1, MEASURED
-        "faster_decode": float(g.get("decode_speedup", H6_DECODE)),              # H6: ESTIMATE (2.5 ms/token)
+        "conversations_per_gpu": float(g.get("conv_per_gpu", H5_CONVERSATIONS)),  # H5: 256 vs 1 at 262k (feasible batch MODELLED at the ~90-layer GQA geometry)
+        "faster_decode": float(g.get("decode_speedup", H6_DECODE)),              # H6: x0.74 per step at that geometry (per-layer steps measured incl. FFN; depth modelled)
         "prefill_speed": PF_OPTIMIZED if kernels == "mature" else PF_CURRENT,    # supporting, differs by scenario
-        "serving_throughput": serve_tp,     # = inference_throughput(H5, H6, prefill, prompt share)
-        "train_lever": s * s * k,
+        "size_factor": s,                   # the inference size factor (reinstated 2026-10-01)
+        "serving_throughput": serve_tp,     # = inference_throughput(H5, H6, prefill, prompt share) x s
+        "train_lever": s * s * k,           # H1 x H2 x H3 = x39.5 today
         "serving_compute_lever": serve_tp,
         # whole-GPU serving lever: the binding (smaller) of memory and compute
         "serving_gpu_lever": min(float(g["mem_factor"]), serve_tp),
@@ -2201,81 +2521,134 @@ def value_bridge_levers(g=None, kernels="current", n_tf=None):
     }
 
 
-def _bridge_company(comp, g, year, lv, ts):
+def _bridge_company(comp, g, year, lv, ts, follow=None):
+    follow = BRIDGE_FOLLOW_20261001 if follow is None else follow
     base = compute_company(comp, g, year)
-    accel = base["accel"]
+    # the four buckets, sized exactly as compute_company sizes them
+    total, infra, server, accel_share = comp[year]
+    ai_capex = total * infra
+    server_bucket = ai_capex * server
+    accel = server_bucket * accel_share
+    servers = server_bucket - accel          # the server around the accelerators
+    datacenter = ai_capex - server_bucket    # buildings, power & cooling, network
+    power = base["ai_opex"]
+    # the two fleets and their levers
     train_fleet = accel * ts
     serve_fleet = accel * (1.0 - ts)
     train_saved = train_fleet * (1.0 - 1.0 / lv["train_lever"])
     serve_lever = lv.get("serving_gpu_lever", min(lv["memory"], lv["serving_compute_lever"]))
     serve_saved = serve_fleet * (1.0 - 1.0 / serve_lever)
-    capex_avoided = train_saved + serve_saved
-    fleet_cut = capex_avoided / accel if accel else 0.0
-    opex_saved = base["ai_opex"] * fleet_cut
-    # power scales with the fleet, so it splits exactly by which fleet shrank
-    train_power_saved = base["ai_opex"] * train_saved / accel if accel else 0.0
-    infer_power_saved = opex_saved - train_power_saved
+    accel_saved = train_saved + serve_saved
+    fleet_cut = accel_saved / accel if accel else 0.0
+    # everything sized by the accelerator count follows the blended fleet cut
+    # (2026-10-01 ruling); power always did
+    servers_saved = servers * fleet_cut * follow["servers"]
+    datacenter_saved = datacenter * fleet_cut * follow["datacenter"]
+    opex_saved = power * fleet_cut
+    capex_avoided = accel_saved + servers_saved + datacenter_saved
     spend_cut = capex_avoided + opex_saved
-    spend = base["ai_capex"] + base["ai_opex"]
+    # attribution: power and the followed buckets split by which fleet shrank
+    train_frac = train_saved / accel_saved if accel_saved else 0.0
+    train_power_saved = opex_saved * train_frac
+    infer_power_saved = opex_saved - train_power_saved
+    followed = servers_saved + datacenter_saved
+    training_total = train_saved + train_power_saved + followed * train_frac
+    inference_total = spend_cut - training_total
+    spend = ai_capex + power
+    net_with = base["net_now"] + spend_cut
     return {
         "name": comp["name"], "train_share": ts,
-        "ai_capex": base["ai_capex"], "accel": accel, "ai_opex": base["ai_opex"],
+        "total": total,
+        "ai_capex": ai_capex, "accel": accel, "ai_opex": power,
+        "accel_pct": accel / total if total else 0.0,
         "ai_rev": base["ai_rev"], "net_now": base["net_now"],
+        # the buckets before
+        "servers": servers, "datacenter": datacenter, "power": power,
+        # the fleets and what each saves
         "train_fleet": train_fleet, "serve_fleet": serve_fleet,
         "train_saved": train_saved, "serve_saved": serve_saved,
-        "capex_avoided": capex_avoided,
-        "fleet_cut": fleet_cut, "opex_saved": opex_saved, "spend_cut": spend_cut,
-        # audience view: two buckets, each with its own power folded in
+        "accel_saved": accel_saved, "fleet_cut": fleet_cut,
+        "servers_saved": servers_saved, "datacenter_saved": datacenter_saved,
+        "capex_avoided": capex_avoided, "opex_saved": opex_saved, "spend_cut": spend_cut,
+        # the buckets after
+        "accel_after": accel - accel_saved, "servers_after": servers - servers_saved,
+        "datacenter_after": datacenter - datacenter_saved, "power_after": power - opex_saved,
+        # audience view: two buckets, each with its power and followed capex folded in
         "train_power_saved": train_power_saved, "infer_power_saved": infer_power_saved,
-        "training_total": train_saved + train_power_saved,
-        "inference_total": serve_saved + infer_power_saved,
-        "net_with": base["net_now"] + spend_cut,
+        "training_total": training_total,
+        "inference_total": inference_total,
+        "net_with": net_with, "net_arch": net_with,
         "pct_cut": spend_cut / spend if spend else 0.0,
         "capitalized": spend_cut / g["discount_rate"],
     }
 
 
-def value_bridge(g=None, companies=None, year="fy26", levers=None, train_shares=None):
-    """Per-company rows + TOTAL for the plain-language bridge. All $B."""
+_BRIDGE_SUM_KEYS = ["total", "ai_capex", "accel", "ai_opex", "ai_rev", "net_now",
+                    "servers", "datacenter", "power",
+                    "train_fleet", "serve_fleet", "train_saved", "serve_saved", "accel_saved",
+                    "servers_saved", "datacenter_saved",
+                    "train_power_saved", "infer_power_saved", "training_total", "inference_total",
+                    "capex_avoided", "opex_saved", "spend_cut",
+                    "accel_after", "servers_after", "datacenter_after", "power_after",
+                    "net_with", "net_arch", "capitalized"]
+
+
+def value_bridge(g=None, companies=None, year="fy26", levers=None, train_shares=None, follow=None):
+    """Per-company rows + TOTAL for the plain-language bridge. All $B. The rows
+    carry compute_company's keys (drop-in for the chart scripts and
+    global_estimate) plus the four buckets before and after. `follow` = which
+    buckets scale with the fleet (default BRIDGE_FOLLOW_20261001: servers and
+    datacenters both follow; BRIDGE_FOLLOW_HELD holds the datacenters)."""
     g = g if g is not None else GLOBALS
     companies = companies if companies is not None else COMPANIES
     lv = levers if levers is not None else value_bridge_levers(g)
     c = CAMPAIGN_LANDED_20260831
     shares = c["train_share_by_company"] if train_shares is None else train_shares
-    rows = [_bridge_company(comp, g, year, lv, shares.get(comp["name"], c["train_share"]))
+    rows = [_bridge_company(comp, g, year, lv, shares.get(comp["name"], c["train_share"]), follow)
             for comp in companies]
-    keys = ["ai_capex", "accel", "ai_opex", "ai_rev", "net_now", "train_fleet",
-            "serve_fleet", "train_saved", "serve_saved", "train_power_saved", "infer_power_saved",
-            "training_total", "inference_total",
-            "capex_avoided", "opex_saved", "spend_cut", "net_with", "capitalized"]
-    total = {k: sum(r[k] for r in rows) for k in keys}
+    total = {k: sum(r[k] for r in rows) for k in _BRIDGE_SUM_KEYS}
     total["name"] = f"TOTAL ({len(rows)})"
     total["train_share"] = total["train_fleet"] / total["accel"] if total["accel"] else 0.0
-    total["fleet_cut"] = total["capex_avoided"] / total["accel"] if total["accel"] else 0.0
+    total["fleet_cut"] = total["accel_saved"] / total["accel"] if total["accel"] else 0.0
+    total["accel_pct"] = total["accel"] / total["total"] if total["total"] else 0.0
     spend = total["ai_capex"] + total["ai_opex"]
     total["pct_cut"] = total["spend_cut"] / spend if spend else 0.0
     return rows, total
 
 
-def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_shares=None):
+def bridge_year(g, companies, year, kernels="current", follow=None):
+    """compute_year's signature on the value bridge: (rows, TOTAL) with
+    compute_year-compatible keys, levers from value_bridge_levers(g, kernels).
+    The chart scripts that used to call compute_year call this."""
+    return value_bridge(g, companies, year, value_bridge_levers(g, kernels), follow=follow)
+
+
+def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_shares=None, follow=None):
     """Switch the Helarctos levers on one at a time (story order) and report the
-    cumulative spend cut. The last step equals value_bridge's total; the order
+    cumulative spend cut. Steps 1-3 move the accelerators (and their power)
+    only; step 4 lets the servers and datacenters sized by those GPUs follow.
+    The last step equals value_bridge's total with the same `follow`; the order
     changes the increments, never the end point."""
     lv = levers if levers is not None else value_bridge_levers(g)
-    s = lv["smaller_model"]
+    follow = BRIDGE_FOLLOW_20261001 if follow is None else follow
+    none = {"servers": 0.0, "datacenter": 0.0}
     steps = [
-        ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0)),
-        ("Smaller model trained on fewer tokens (training)", dict(train_lever=lv["train_lever"], memory=1.0,
-                                                                  serving_compute_lever=1.0)),
-        ("+ Fixed-size memory, more conversations per GPU, faster decode (inference)", dict(train_lever=lv["train_lever"], memory=lv["memory"],
-                                                     serving_compute_lever=lv["serving_compute_lever"])),
+        ("Today's transformer fleet", dict(train_lever=1.0, memory=1.0, serving_compute_lever=1.0), none),
+        ("Smaller model trained on fewer tokens, faster per token (training)",
+         dict(train_lever=lv["train_lever"], memory=1.0, serving_compute_lever=1.0), none),
+        ("+ Fixed-size memory, more conversations per GPU advancing per decode step (inference)",
+         dict(train_lever=lv["train_lever"], memory=lv["memory"],
+              serving_compute_lever=lv["serving_compute_lever"]), none),
+        ("+ the servers and datacenters sized by those GPUs follow",
+         dict(train_lever=lv["train_lever"], memory=lv["memory"],
+              serving_compute_lever=lv["serving_compute_lever"]), follow),
     ]
     out, prev = [], 0.0
-    for label, over in steps:
+    for label, over, fol in steps:
         over["serving_gpu_lever"] = min(over["memory"], over["serving_compute_lever"])
-        _, t = value_bridge(g, companies, year, dict(lv, **over), train_shares)
+        _, t = value_bridge(g, companies, year, dict(lv, **over), train_shares, follow=fol)
         out.append({"step": label, "spend_cut": t["spend_cut"], "fleet_cut": t["fleet_cut"],
-                    "increment": t["spend_cut"] - prev, **over})
+                    "increment": t["spend_cut"] - prev, "follow": dict(fol), **over})
         prev = t["spend_cut"]
     return out
 
@@ -2289,14 +2662,18 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
     g = g if g is not None else GLOBALS
     companies = companies if companies is not None else COMPANIES
 
-    def run(gg=None, comps=None, over=None, shares=None):
+    def run(gg=None, comps=None, over=None, shares=None, follow=None):
         gg = gg or g
         lv = value_bridge_levers(gg)
         if over:
+            # the inference lever carries the size factor too (2026-10-01): a
+            # different equal-quality ratio moves it unless set explicitly
+            if "smaller_model" in over and "serving_compute_lever" not in over:
+                lv["serving_compute_lever"] = lv["serving_compute_lever"] / lv["size_factor"] * over["smaller_model"]
             lv.update(over)
         lv["train_lever"] = lv["smaller_model"] * lv["fewer_tokens"] * lv["train_speed"]
         lv["serving_gpu_lever"] = min(lv["memory"], lv["serving_compute_lever"])
-        return value_bridge(gg, comps or companies, year, lv, shares)[1]["spend_cut"]
+        return value_bridge(gg, comps or companies, year, lv, shares, follow=follow)[1]["spend_cut"]
 
     def scaled(i, f):
         cs = copy.deepcopy(companies)
@@ -2306,18 +2683,20 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
         return cs
 
     def _tp(h5=None, h6=None):
+        """The inference lever with H5 / H6 overridden: equal-size throughput x the size factor."""
         lv0 = value_bridge_levers(g)
         return inference_throughput(lv0["conversations_per_gpu"] if h5 is None else h5,
                                     lv0["faster_decode"] if h6 is None else h6,
-                                    lv0["prefill_speed"], PROMPT_TIME_RATIO)
+                                    lv0["prefill_speed"], PROMPT_TIME_RATIO) * lv0["size_factor"]
 
     def _ctx_over(ctx):
         """Shorter average conversations: less memory advantage, fewer tokens per GPU."""
         h5, h6 = decode_levers(ctx)
         tp = inference_throughput(h5, h6, prefill_advantage("current", ctx), prompt_time_ratio(ctx))
         return {"memory": float(g["mem_factor"]) * ctx / CAMPAIGN_LANDED_20260831["context_tokens"],
-                "serving_compute_lever": tp}
+                "serving_compute_lever": tp * value_bridge_levers(g)["size_factor"]}
 
+    h6_4k, h6_128k = decode_levers(4096)[1], decode_levers(131072)[1]
     base = run()
     rows = [
         ("Server share of AI capex", "company tabs, row 5", "", "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
@@ -2325,19 +2704,22 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
         ("Smaller model for the same quality", "Inputs B23", "H1+H2", "×2", run(over={"smaller_model": 2.0, "fewer_tokens": 2.0}),
          "×5.7 (5T dense)", run(over={"smaller_model": param_matching_gain(5e12),
                                         "fewer_tokens": param_matching_gain(5e12)})),
-        ("More conversations per GPU", "Inputs B28", "H5", "×16", run(over={"serving_compute_lever": _tp(h5=16.0)}),
-         "×128", run(over={"serving_compute_lever": _tp(h5=128.0)})),
-        ("Faster decode per token", "Inputs B29", "H6", "×2.6 (measured, older kernels)",
-         run(over={"serving_compute_lever": _tp(h6=2.6)}), "×12", run(over={"serving_compute_lever": _tp(h6=12.0)})),
+        ("More conversations per GPU", "Inputs B28", "H5", "×64 (full-model cell, 2026-08-14)", run(over={"serving_compute_lever": _tp(h5=64.0)}),
+         "×512", run(over={"serving_compute_lever": _tp(h5=512.0)})),
+        ("Decode step vs the transformer, per layer", "Inputs B29", "H6", f"×{h6_128k:.1f} (the 128k cell)",
+         run(over={"serving_compute_lever": _tp(h6=h6_128k)}), f"×{h6_4k:.1f} (the 4k cell)", run(over={"serving_compute_lever": _tp(h6=h6_4k)})),
         ("Memory per conversation", "Inputs B2", "H4", "÷208 (frontier-model geometry)",
          run(over={"memory": fleet_memory_lever(262144)}), "÷8,000", run(over={"memory": 8000.0})),
         # 1M: a transformer conversation's KV (~207 GB) no longer fits one GPU; the
         # 1/context law still credits it one stream per GPU (sharding cost ignored),
         # so this high case is conservative.
         ("Average conversation length", "262k default (app: sidebar)", "", "32k",
-         run(over=_ctx_over(32768)), "1M", run(over=_ctx_over(1048576))),
+         run(over=_ctx_over(32768)), "1M (modelled)", run(over=_ctx_over(1048576))),
+        ("Datacenters follow the fleet", "Levers (BRIDGE_FOLLOW)", "", "held (leases contracted to FY33)",
+         run(follow=BRIDGE_FOLLOW_HELD), "follow (headline)", run(follow=BRIDGE_FOLLOW_20261001)),
         ("Data-center share of capex", "company tabs, row 4", "", "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
-        ("Training speed per token", "Levers D11/E11", "H3", "×0.6", run(over={"train_speed": 0.6}), "×2", run(over={"train_speed": 2.0})),
+        ("Training speed per token", "Levers D11/E11", "H3", "×1 (parity)", run(over={"train_speed": 1.0}),
+         f"×{TRAIN_SPEED_BY_SCENARIO['mature']:.1f} (fused-kernel target)", run(over={"train_speed": TRAIN_SPEED_BY_SCENARIO["mature"]})),
         ("Electricity rate", "Inputs B9", "", "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
         ("Wall power per GPU", "Inputs B8", "", "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
         ("Training share of the chip fleet", "Levers C37:C42", "", "all 20%", run(shares={c["name"]: 0.2 for c in companies}),
@@ -2350,18 +2732,82 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
 
 def _check_value_bridge():
     zero = {c["name"]: 0.0 for c in COMPANIES}
+    none = {"servers": 0.0, "datacenter": 0.0}
     amdahl = dict(value_bridge_levers(), serving_gpu_lever=reduction_factor(GLOBALS))
     for yr in ("fy25", "fy26"):
-        _, vb = value_bridge(year=yr, train_shares=zero, levers=amdahl)
+        # serving-only engine: no training fleet, Amdahl lever, nothing following
+        _, vb = value_bridge(year=yr, train_shares=zero, levers=amdahl, follow=none)
         _, ref = compute_year(GLOBALS, COMPANIES, yr)
         assert abs(vb["spend_cut"] - ref["spend_cut"]) < 1e-6, (yr, vb["spend_cut"], ref["spend_cut"])
-        _, t = value_bridge(year=yr)
-        assert abs(t["training_total"] + t["inference_total"] - t["spend_cut"]) < 1e-9
-        lad = savings_ladder(year=yr)
-        assert abs(lad[-1]["spend_cut"] - value_bridge(year=yr)[1]["spend_cut"]) < 1e-9
+        for fol in (BRIDGE_FOLLOW_20261001, BRIDGE_FOLLOW_HELD, none):
+            _, t = value_bridge(year=yr, follow=fol)
+            assert abs(t["training_total"] + t["inference_total"] - t["spend_cut"]) < 1e-9
+            bill = t["accel"] + t["servers"] + t["datacenter"] + t["power"]
+            after = t["accel_after"] + t["servers_after"] + t["datacenter_after"] + t["power_after"]
+            assert abs((bill - after) - t["spend_cut"]) < 1e-9, (yr, bill - after, t["spend_cut"])
+            assert abs(t["ai_capex"] - (t["accel"] + t["servers"] + t["datacenter"])) < 1e-9
+            lad = savings_ladder(year=yr, follow=fol)
+            assert abs(lad[-1]["spend_cut"] - t["spend_cut"]) < 1e-9
+        # held datacenters never save more than following ones
+        assert value_bridge(year=yr, follow=BRIDGE_FOLLOW_HELD)[1]["spend_cut"] <= value_bridge(year=yr)[1]["spend_cut"]
 
 
 _check_value_bridge()
+
+
+# (key, what the surfaces say, tolerance) — tolerance is the quoted rounding.
+# RE-QUOTED 2026-09-01: the whole family re-based onto the banked-kernels +
+# aggregate-decode-estimate levers (Today x793 / Ceiling x816). The previous
+# family (159.0 / 2600 / 0.42 / -136 / 366 / 6100 / 3300 / 7600 / 163.7 /
+# 20.0 / 49.6 / 3.1, HEADLINE_QUOTED_20260824) is RETIRED with the x9.24 basis.
+# RE-QUOTED 2026-09-29: data-center (infra) shares re-based on 10-K/10-Q
+# property & equipment notes and segment disclosures (Microsoft 0.97,
+# Alphabet 0.93/0.95, Meta 0.95/0.98, Amazon FY26 0.76). The 2026-09-01 family
+# (166.0 / 2770 / 0.443 / -129 / 382.0 / 6370 / 3460 / 7960) is RETIRED.
+# RE-QUOTED 2026-10-01: the inference size factor is REINSTATED and H5 x H6 come
+# from the per-layer decode receipt (x1,685 inference lever, x1,878 cost-
+# weighted); H3 is the MEASURED x2.22; the value-bridge totals join the family
+# with servers + datacenters following the fleet. Same day (4): the decode
+# ratios move to the ~90-layer GQA frontier geometry of record; review fixes
+# (measured own FFN, apples decomposition, 94.5 GiB) take the lever to x768
+# (the x1,685 / x1,878 and x882 / x1,335 pairs never shipped).
+# The 2026-09-29 (4) family
+# (162.7 / 2712 / 0.448 / -121.2 / 385.1 / 6418 / 3391 / 8022 / x723.6,
+# HEADLINE_QUOTED_20260929) is RETIRED.
+# (Trail of the 2026-09-29 passes: (4) H4 memory lever at the MEASURED x2,032
+# (was the /100 cap) and the inference lever split into H5 x H6 at full
+# precision; (3) inference lever no longer scaling with model size (x368, was
+# x1,553 -- reversed 2026-10-01); (2) E[context] 262k and wall power 2.3 kW/GPU.
+# The (3) family (161.8 / 2697 / 0.446 / -122.0 / 382.9 / 6381 / 3371 / 7976 /
+# x141.1) is RETIRED.)
+HEADLINE_QUOTED_20261001 = (
+    ("fy25_spend_cut", 162.8, 0.5),          # "~$163B/yr" (serving-only engine, compute_year)
+    ("fy25_capitalized", 2714.0, 50.0),      # "~$2.7T capitalized at 6%"
+    ("fy25_pct_cut", 0.448, 0.005),          # "~45% of AI spend cut"
+    ("fy25_net_arch", -121.1, 1.0),          # "burn shrinks to ~ -$121B/yr"
+    ("fy26_spend_cut", 385.3, 0.5),          # "FY26 ~$385B/yr" (serving-only engine, compute_year)
+    ("fy26_capitalized", 6421.0, 50.0),      # "~$6.4T"
+    ("global_fy25_capitalized", 3393.0, 50.0),   # "global est ~$3.4T FY25"
+    ("global_fy26_capitalized", 8027.0, 50.0),   # "~$8.0T FY26"
+    ("today_reduction", 1225.5, 0.5),        # "~x1,225 cost-weighted" (memory x2,032, inference x768)
+    # value bridge (simple deck slides 2-3, app Summary / Value Bridge tabs)
+    ("fy26_bridge_spend_cut", 774.1, 0.5),       # "$774B a year" FY26, servers + datacenters follow
+    ("fy26_bridge_spend_cut_held", 515.9, 0.5),  # sensitivity: datacenters held (leases to FY33)
+    ("fy26_bridge_spend_cut_mature", 777.4, 0.5),  # upside: fused kernels at the 8k-parity target
+    ("fy25_bridge_spend_cut", 359.6, 0.5),       # "$360B in FY2025"
+    ("fy26_bridge_net_with", 128.1, 1.0),        # net AI turns +$128B
+    ("train_lever", 39.52, 0.05),                # "x40 training": x4.22 x x4.22 x x2.22
+    ("serving_gpu_lever", 768.2, 0.5),           # "x768 inference": min(x2,032 memory, x768 compute at the frontier geometry)
+)
+
+_HEADLINE = headline_family()
+for _k, _quoted, _tol in HEADLINE_QUOTED_20261001:
+    assert abs(_HEADLINE[_k] - _quoted) <= _tol, (
+        f"headline drift: {_k} computes to {_HEADLINE[_k]:.4f} but the decks, the app "
+        f"and the workbook quote {_quoted} (tolerance {_tol}). Re-quote every surface "
+        f"listed in the block above before changing a lever."
+    )
+del _k, _quoted, _tol
 
 
 if __name__ == "__main__":
