@@ -17,6 +17,45 @@ from pathlib import Path
 import importlib
 
 import streamlit as st
+
+# ---- external-content scrub (mirrors ai_capex_efficiency._EXTERNAL_SCRUB) ----------
+# The app is public: no file paths / module or constant names / kernel-stack internals /
+# mechanism terms may reach a viewer. Every Streamlit text surface is wrapped once here.
+import re as _re
+_EXTERNAL_SCRUB = [
+    (_re.compile(r"(?:/home/)?[\w~.-]+(?:/[\w~.()\[\]-]+)+\.(?:json|md|png|py|csv)"), "internal measurement archive"),
+    (_re.compile(r"\b[\w-]+\.(?:json|md|png|py|csv)\b"), "internal measurement archive"),
+    (_re.compile(r"\b(?:paper|experiments|bdm|src)/[\w./{},-]+"), "internal measurement archive"),
+    (_re.compile(r"\bai_capex_model\.\w+"), "the model"),
+    (_re.compile(r"\bSERVING\['\w+'\]"), "the model"),
+    (_re.compile(r"\bTriton\s+"), ""),
+    (_re.compile(r"\bmegakernel\b"), "fused kernel"),
+    (_re.compile(r"\brecurrence\b", _re.I), "internal dynamics"),
+    (_re.compile(r"\brecurrent\b", _re.I), "internal"),
+    (_re.compile(r"\bRNN\b"), "our architecture"),
+]
+
+
+def scrub_external(text):
+    if not isinstance(text, str):
+        return text
+    for pat, rep in _EXTERNAL_SCRUB:
+        text = pat.sub(rep, text)
+    return text
+
+
+def _wrap_text_api(name):
+    orig = getattr(st, name)
+
+    def wrapped(body=None, *a, **k):
+        if "help" in k:
+            k["help"] = scrub_external(k["help"])
+        return orig(scrub_external(body), *a, **k) if body is not None else orig(*a, **k)
+    setattr(st, name, wrapped)
+
+
+for _n in ("markdown", "caption", "write", "info", "warning", "text", "subheader", "header", "title"):
+    _wrap_text_api(_n)
 import pandas as pd
 
 import ai_capex_model
@@ -114,6 +153,8 @@ def section(title):
 
 
 def show_table(columns, rows, widths=None, height=None, wrap=False):
+    rows = [[(scrub_external(c[0]),) + tuple(c[1:]) if isinstance(c, tuple) else scrub_external(c) for c in r] for r in rows]
+    columns = [scrub_external(c) for c in columns]
     """rows: list of rows; each row is a list of (text, color) where color in CMAP.
     Renders a colored, Excel-like grid. wrap=True renders a static table so long
     text wraps instead of being cut off."""
@@ -750,9 +791,9 @@ def serving_training_tab(g):
         "constant ratio decay: the transformer pays `base + attn·T` per token (the transformer's fused attention kernel is "
         "linear per token, quadratic over the sequence) while our internal state is fixed-size, so our "
         "per-token cost is FLAT — now MEASURED, not inferred: our backward pass per-token is flat in T "
-        "(3.27–3.31 µs/tok, spread 1.4%, across 8× context; tsweep d4096 n=25) while the transformer's "
+        "(3.27–3.31 µs/tok, spread 1.4%, across 8× context; 25 runs at d4096) while the transformer's "
         "rises +66%, and decode is flat +0.83% over 128× context. The B4/T32,768 ~parity cell stays "
-        "retired (90.5% an h-grid occupancy effect: B·n_blocks = 124 < 132 SMs at B4). `base` and "
+        "retired (a batch-occupancy artefact at batch 4). `base` and "
         "`attn` are fitted to the 2k and 8k cells; the flat model gives "
         f"r(32,768) = {training_step_ratio(32768):.2f} and puts the crossover at "
         f"T ≈ {training_context_crossover():,.0f} (PROJECTED for this frame; independently measured "
