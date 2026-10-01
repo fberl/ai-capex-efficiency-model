@@ -1821,15 +1821,16 @@ def what_matters_tab(comps, g):
     fol = _follow(g)
     _, t = value_bridge(g, comps, "fy26", _bridge_levers(g), _train_shares(), follow=fol)
     _, t_follow = value_bridge(g, comps, "fy26", _bridge_levers(g), _train_shares(), follow=BRIDGE_FOLLOW_20261001)
+    _kern = "mature" if st.session_state.get("scenario") == "Optimized kernels" else "current"
     st.caption("Each row moves ONE input to a plausible low and high value, everything else as set, and shows "
-               f"the change in the FY2026 saving. Deltas are on the headline basis — servers and data centres "
-               f"following the fleet ({md_usd(t_follow['spend_cut'])}B/yr)"
-               + (f"; the sidebar currently holds the data centres ({md_usd(t['spend_cut'])}B/yr), which is the "
+               f"the change in the FY2026 saving. Deltas are on the ACTIVE basis — {st.session_state.get('scenario')}, "
+               f"data centres {'held' if _held(g) else 'following the fleet'} ({md_usd(t['spend_cut'])}B/yr)"
+               + (f"; the headline basis with data centres following is {md_usd(t_follow['spend_cut'])}B/yr — the "
                   f"'Datacenters follow the fleet' row below" if _held(g) else "")
                + ". ★ = moves it by \\$10B or more.")
-    rows = sensitivity_table(g, comps)
+    rows = sensitivity_table(g, comps, kernels=_kern, follow=fol)
     WM_WHY = _wm_why()
-    section(f"What moves the FY2026 saving ({bn(t_follow['spend_cut'])}/yr) — Helarctos levers vs market data")
+    section(f"What moves the FY2026 saving ({bn(t['spend_cut'])}/yr) — Helarctos levers vs market data")
     body, chart = [], []
     for gname, items, gcode in (("Helarctos levers — what the architecture changes", [r for r in rows if r[2]], "h"),
                                 ("Market & company data — not about Helarctos", [r for r in rows if not r[2]], "s")):

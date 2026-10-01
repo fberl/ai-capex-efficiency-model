@@ -2653,18 +2653,23 @@ def savings_ladder(g=None, companies=None, year="fy26", levers=None, train_share
     return out
 
 
-def sensitivity_table(g=None, companies=None, year="fy26"):
+def sensitivity_table(g=None, companies=None, year="fy26", kernels="current", follow=None):
     """What moves the answer: FY-`year` value-bridge spend cut when ONE input is
-    set to a plausible low / high value, everything else at defaults. Each row:
+    set to a plausible low / high value, everything else at defaults — at the
+    ACTIVE scenario (`kernels`) and follow setting (2026-10-01 fix: the base used
+    to mix H3-current with the picker's inference lever). Each row:
     (input, where to edit it, helarctos_lever?, low label, delta_low, high label,
     delta_high), sorted by the larger swing. $B."""
     import copy
     g = g if g is not None else GLOBALS
     companies = companies if companies is not None else COMPANIES
 
+    base_follow = BRIDGE_FOLLOW_20261001 if follow is None else follow
+
     def run(gg=None, comps=None, over=None, shares=None, follow=None):
         gg = gg or g
-        lv = value_bridge_levers(gg)
+        fol = base_follow if follow is None else follow
+        lv = value_bridge_levers(gg, kernels=kernels)
         if over:
             # the inference lever carries the size factor too (2026-10-01): a
             # different equal-quality ratio moves it unless set explicitly
@@ -2673,7 +2678,7 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
             lv.update(over)
         lv["train_lever"] = lv["smaller_model"] * lv["fewer_tokens"] * lv["train_speed"]
         lv["serving_gpu_lever"] = min(lv["memory"], lv["serving_compute_lever"])
-        return value_bridge(gg, comps or companies, year, lv, shares, follow=follow)[1]["spend_cut"]
+        return value_bridge(gg, comps or companies, year, lv, shares, follow=fol)[1]["spend_cut"]
 
     def scaled(i, f):
         cs = copy.deepcopy(companies)
@@ -2684,7 +2689,7 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
 
     def _tp(h5=None, h6=None):
         """The inference lever with H5 / H6 overridden: equal-size throughput x the size factor."""
-        lv0 = value_bridge_levers(g)
+        lv0 = value_bridge_levers(g, kernels=kernels)
         return inference_throughput(lv0["conversations_per_gpu"] if h5 is None else h5,
                                     lv0["faster_decode"] if h6 is None else h6,
                                     lv0["prefill_speed"], PROMPT_TIME_RATIO) * lv0["size_factor"]
@@ -2692,11 +2697,19 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
     def _ctx_over(ctx):
         """Shorter average conversations: less memory advantage, fewer tokens per GPU."""
         h5, h6 = decode_levers(ctx)
-        tp = inference_throughput(h5, h6, prefill_advantage("current", ctx), prompt_time_ratio(ctx))
+        tp = inference_throughput(h5, h6, prefill_advantage(kernels, ctx), prompt_time_ratio(ctx))
         return {"memory": float(g["mem_factor"]) * ctx / CAMPAIGN_LANDED_20260831["context_tokens"],
-                "serving_compute_lever": tp * value_bridge_levers(g)["size_factor"]}
+                "serving_compute_lever": tp * value_bridge_levers(g, kernels=kernels)["size_factor"]}
 
     h6_4k, h6_128k = decode_levers(4096)[1], decode_levers(131072)[1]
+    # H3 cases: parity on the low side; the OTHER scenario's value on the high side
+    # (the active scenario's own value is the base, delta 0 by construction)
+    if kernels == "mature":
+        _h3_other = TRAIN_SPEED_BY_SCENARIO["current"]
+        _h3_other_label = f"×{_h3_other:.1f} (today's measured kernels)"
+    else:
+        _h3_other = TRAIN_SPEED_BY_SCENARIO["mature"]
+        _h3_other_label = f"×{_h3_other:.1f} (fused-kernel target)"
     base = run()
     rows = [
         ("Server share of AI capex", "company tabs, row 5", "", "−15%", run(comps=scaled(2, 0.85)), "+15%", run(comps=scaled(2, 1.15))),
@@ -2719,7 +2732,7 @@ def sensitivity_table(g=None, companies=None, year="fy26"):
          run(follow=BRIDGE_FOLLOW_HELD), "follow (headline)", run(follow=BRIDGE_FOLLOW_20261001)),
         ("Data-center share of capex", "company tabs, row 4", "", "−5%", run(comps=scaled(1, 0.95)), "+5%", run(comps=scaled(1, 1.05))),
         ("Training speed per token", "Levers D11/E11", "H3", "×1 (parity)", run(over={"train_speed": 1.0}),
-         f"×{TRAIN_SPEED_BY_SCENARIO['mature']:.1f} (fused-kernel target)", run(over={"train_speed": TRAIN_SPEED_BY_SCENARIO["mature"]})),
+         _h3_other_label, run(over={"train_speed": _h3_other})),
         ("Electricity rate", "Inputs B9", "", "$0.05", run(gg=dict(g, elec_rate=0.05)), "$0.12", run(gg=dict(g, elec_rate=0.12))),
         ("Wall power per GPU", "Inputs B8", "", "1.5 kW", run(gg=dict(g, wall_power_kw=1.5)), "3.0 kW", run(gg=dict(g, wall_power_kw=3.0))),
         ("Training share of the chip fleet", "Levers C37:C42", "", "all 20%", run(shares={c["name"]: 0.2 for c in companies}),

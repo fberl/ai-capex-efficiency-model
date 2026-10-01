@@ -2727,8 +2727,18 @@ def build_summary(ws, d26, d25):
     L11 = LV_LEVER_ROW0 + 2
     eq = lambda pf: f"(1+Inputs!$B$32)/(Inputs!$B$32/{pf}+1/(Inputs!$B$28*Inputs!$B$29))*Inputs!$B$33"  # noqa: E731
     tl = lambda col: f"SmallerModel*FewerTokens*Levers!${col}${L11}"  # noqa: E731
+    # Live dollars per scenario = the Value Bridge ladder's last-step formula with THIS
+    # column's training lever (row sc+3) and inference compute lever (row sc+5): the
+    # same per-company SUMPRODUCT the twin check asserts (ai_capex_model.savings_ladder).
+    _d0, _d1 = VB_DETAIL26_ROW + 2, VB_DETAIL26_ROW + 1 + len(COMPANIES)
+    _vr = lambda col: f"{VB}!${col}${_d0}:${col}${_d1}"  # noqa: E731
+
+    def _delta_spend(col):
+        tl_cell, sc_cell = f"{col}{sc + 3}", f"{col}{sc + 5}"
+        chips = f"({_vr('D')}*(1-1/{tl_cell})+{_vr('E')}*(1-1/MIN(MemoryLever,{sc_cell})))"
+        return (f"=SUMPRODUCT({chips}*(1+({_vr('I')}+{_vr('R')}*ServersFollow+{_vr('S')}*DCFollow)"
+                f"/{_vr('B')}))")
     _, _tc = value_bridge(GLOBALS, COMPANIES, "fy26", value_bridge_levers(GLOBALS, kernels="current"))
-    _, _to = value_bridge(GLOBALS, COMPANIES, "fy26", value_bridge_levers(GLOBALS, kernels="mature"))
     delta_rows = [
         ("H3 · training speed per token, same size", f"=Levers!$D${L11}", f"=Levers!$E${L11}", FMT_X2, True),
         ("Training GPU-hour lever (H1 × H2 × H3)", f"={tl('D')}", f"={tl('E')}", FMT_X1, False),
@@ -2741,8 +2751,8 @@ def build_summary(ws, d26, d25):
         ("Inference-fleet GPUs after (FY2026, GPU-equivalents)",
          f"={VB}!$B$16/MIN(MemoryLever,{eq('Inputs!$B$24')})*1000000000/Inputs!$B$7",
          f"={VB}!$B$16/MIN(MemoryLever,{eq('Inputs!$B$25')})*1000000000/Inputs!$B$7", "#,##0", False),
-        ("Spend made unnecessary, FY2026 (static at the build defaults; the live cells above follow the picker)",
-         _tc["spend_cut"], _to["spend_cut"], FMT_B, False),
+        ("Spend made unnecessary, FY2026 (live: the ladder formula at each scenario's levers; follows the data-centre switch)",
+         _delta_spend("B"), _delta_spend("C"), FMT_B, False),
     ]
     for i, (lab, fc, fo, fmt, scen) in enumerate(delta_rows):
         r = sc + 2 + i
